@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Opportunities | Ekayan Info Portal</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  
+  <header class="header">
+    <a href="#" class="logo"><span>Ekayan</span> Info Portal</a>
+  </header>
+
+  <section class="hero">
+    <h1>Discover Your Next Step</h1>
+    <p>Explore the latest admissions, scholarships, fellowships, and job leads curated by the Ekayan Foundation.</p>
+  </section>
+
+  <main class="container">
+    
+    <div class="filters-bar">
+      <div class="tabs" id="category-tabs">
+        <button class="tab-btn active" data-category="all">All Opportunities</button>
+        <button class="tab-btn" data-category="admissions">Admissions</button>
+        <button class="tab-btn" data-category="scholarships">Scholarships</button>
+        <button class="tab-btn" data-category="fellowships">Fellowships</button>
+        <button class="tab-btn" data-category="jobs">Job Leads</button>
+      </div>
+      
+      <input type="text" class="search-input" id="search-input" placeholder="Search by title or org...">
+    </div>
+
+    <div class="opportunities-grid" id="opportunities-grid">
+      <!-- Cards will be injected here via JS -->
+    </div>
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/portal.js"></script>
+</body>
+</html>

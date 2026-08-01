@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel | Ekayan Info Portal</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  
+  <!-- Login Overlay -->
+  <div id="login-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-color); z-index:1000; display:flex; align-items:center; justify-content:center;">
+    <div class="admin-card" style="width:100%; max-width:400px; text-align:center;">
+      <h2 style="border-bottom:none; margin-bottom:1rem;">Admin Login</h2>
+      <p style="color:var(--text-secondary); margin-bottom:1.5rem;">Enter password to manage portal</p>
+      <input type="password" id="admin-password" class="form-control" placeholder="Password" style="margin-bottom:1rem; text-align:center;">
+      <button id="btn-login" class="btn btn-primary" style="width:100%;">Sign In</button>
+      <p id="login-error" style="color:var(--danger); margin-top:1rem; display:none; font-size:0.9rem;">Incorrect password.</p>
+      <p style="color:var(--text-muted); margin-top:1.5rem; font-size:0.8rem;">Demo password: admin123</p>
+    </div>
+  </div>
+
+  <header class="header">
+    <a href="portal.html" class="logo"><span>Ekayan</span> Admin</a>
+    <nav class="nav-links">
+      <a href="portal.html">View Public Portal</a>
+    </nav>
+  </header>
+
+  <main class="container">
+
+    <!-- Page-Level Tabs -->
+    <div class="tabs" style="margin: 1.5rem 0;">
+      <button class="tab-btn active" id="tab-manage" onclick="switchAdminTab('manage')">📋 Manage Live Listings</button>
+      <button class="tab-btn" id="tab-review" onclick="switchAdminTab('review')">🤖 AI Review Queue <span id="pending-badge" style="background:var(--primary-color);color:#fff;border-radius:10px;padding:2px 7px;font-size:0.75rem;margin-left:4px;">0</span></button>
+    </div>
+
+    <!-- MANAGE TAB -->
+    <div id="section-manage">
+    <div class="admin-container">
+      
+      <!-- Form Side -->
+      <div class="admin-card">
+        <h2 id="form-title">Add New Opportunity</h2>
+        <form id="opportunity-form">
+          <input type="hidden" id="opp-id" value="">
+          
+          <div class="form-group">
+            <label for="opp-title">Opportunity Title</label>
+            <input type="text" id="opp-title" class="form-control" required placeholder="e.g. Merit Scholarship">
+          </div>
+          
+          <div class="form-group">
+            <label for="opp-category">Category</label>
+            <select id="opp-category" class="form-control" required>
+              <option value="admissions">Admissions</option>
+              <option value="scholarships">Scholarships</option>
+              <option value="fellowships">Fellowships</option>
+              <option value="jobs">Job Leads</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="opp-org">Organization / Institution</label>
+            <input type="text" id="opp-org" class="form-control" required placeholder="e.g. Delhi University">
+          </div>
+          
+          <div class="form-group">
+            <label for="opp-deadline">Application Deadline</label>
+            <input type="date" id="opp-deadline" class="form-control" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="opp-link">Apply Link (URL)</label>
+            <input type="url" id="opp-link" class="form-control" required placeholder="https://...">
+          </div>
+          
+          <div class="form-group">
+            <label for="opp-desc">Description</label>
+            <textarea id="opp-desc" class="form-control" required placeholder="Brief details about eligibility and benefits..."></textarea>
+          </div>
+          
+          <div style="display:flex; gap:10px; margin-top:20px;">
+            <button type="submit" class="btn btn-primary" style="flex:1" id="btn-save">Save Opportunity</button>
+            <button type="button" class="btn btn-secondary" id="btn-cancel" style="display:none;">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Table Side -->
+      <div class="admin-card">
+        <h2>Manage Opportunities</h2>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Title & Org</th>
+                <th>Category</th>
+                <th>Deadline</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="admin-table-body">
+              <!-- Rows injected here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+    </div>
+    </div> <!-- end section-manage -->
+
+    <!-- REVIEW QUEUE TAB -->
+    <div id="section-review" style="display:none;">
+      <div class="admin-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:1rem; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
+          <h2 style="margin:0; border-bottom:none;">🤖 AI-Found Opportunities — Pending Review</h2>
+          <button id="btn-run-scraper" class="btn btn-primary" style="font-size:0.85rem; padding: 8px 14px;">🔄 Run Scraper Now</button>
+        </div>
+        <p style="color:var(--text-secondary); margin-bottom:1.5rem; font-size:0.9rem;">
+          These were extracted by the AI scraper from your source websites. Review each one and <strong style="color:var(--success);">Approve</strong> to publish it live, or <strong style="color:var(--danger);">Reject</strong> to discard it.
+        </p>
+        <div id="review-queue-container">
+          <!-- Pending cards injected here -->
+        </div>
+      </div>
+    </div> <!-- end section-review -->
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/admin.js"></script>
+  <script src="js/review.js"></script>
+</body>
+</html>

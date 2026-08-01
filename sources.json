@@ -1,0 +1,10 @@
+{
+  "_instructions": "Add the website sitemaps or individual URLs you want the AI to scan. Sitemap XMLs will automatically auto-discover the latest relevant article URLs to scrape.",
+  "sources": [
+    {
+      "url": "https://www.buddy4study.com/article/post-sitemap.xml",
+      "label": "Buddy4Study Latest Articles (Auto-discovery)",
+      "category_hint": "scholarships"
+    }
+  ]
+}
