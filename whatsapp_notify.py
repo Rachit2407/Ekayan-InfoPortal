@@ -12,6 +12,7 @@ import sys
 import json
 import requests
 from dotenv import load_dotenv
+import db
 
 # Load environment variables
 load_dotenv()
@@ -134,7 +135,7 @@ def notify_admin_new_opportunities(new_items: list):
         return
 
     # Load existing state or start fresh
-    state = load_json_file(STATE_FILE)
+    state = db.get_bot_state()
     if not isinstance(state, dict):
         state = {}
     
@@ -152,7 +153,7 @@ def notify_admin_new_opportunities(new_items: list):
         })
 
     state["pending_review"] = pending_review
-    save_json_file(STATE_FILE, state)
+    db.save_bot_state(state)
 
     # Format the WhatsApp message to Admin
     msg = f"🔔 *Ekayan Scraper — {len(new_items)} New Opportunities Found!*\n\n"
@@ -219,7 +220,7 @@ def handle_incoming_whatsapp_message(payload: dict):
 
 def send_pending_list_to_admin():
     """Sends current list of pending numbered opportunities to the admin."""
-    state = load_json_file(STATE_FILE)
+    state = db.get_bot_state()
     pending_review = state.get("pending_review", [])
     
     if not pending_review:
@@ -238,7 +239,7 @@ def send_pending_list_to_admin():
 
 def process_admin_decision(action, item_number):
     """Approves or rejects a numbered opportunity and updates local json files."""
-    state = load_json_file(STATE_FILE)
+    state = db.get_bot_state()
     pending_review = state.get("pending_review", [])
     
     # Find the opportunity in state list
@@ -255,29 +256,25 @@ def process_admin_decision(action, item_number):
     opp_id = match.get("id")
     title = match.get("title")
     
-    # Update pending.json
-    pending = load_json_file(PENDING_FILE)
+    # Fetch pending from database
+    pending = db.get_pending()
     target_item = None
     for item in pending:
         if item.get("id") == opp_id:
             target_item = item
-            if action == "APPROVE":
-                item["status"] = "approved"
-            else:
-                item["status"] = "rejected"
             break
             
     if not target_item:
-        send_whatsapp_text(ADMIN_WAID, f"⚠ Opportunity '{title}' no longer exists in pending.json.")
+        send_whatsapp_text(ADMIN_WAID, f"⚠ Opportunity '{title}' no longer exists in the pending list.")
         return
         
-    # Save the updated pending.json
-    save_json_file(PENDING_FILE, pending)
+    # Update status in Supabase
+    db.update_opportunity_status(opp_id, "approved" if action == "APPROVE" else "rejected")
     
-    # Remove from state.json pending queue
+    # Remove from state pending queue and save
     pending_review = [e for e in pending_review if e.get("number") != item_number]
     state["pending_review"] = pending_review
-    save_json_file(STATE_FILE, state)
+    db.save_bot_state(state)
     
     if action == "APPROVE":
         # Post to the student group channel

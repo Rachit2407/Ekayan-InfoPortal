@@ -21,19 +21,16 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests beautifulsoup4 lxml google-generativeai
+        pip install requests beautifulsoup4 lxml google-generativeai python-dotenv
 
     - name: Run Scraper
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}
+        PHONE_NUMBER_ID: ${{ secrets.PHONE_NUMBER_ID }}
+        ADMIN_WAID: ${{ secrets.ADMIN_WAID }}
+        STUDENT_GROUP_ID: ${{ secrets.STUDENT_GROUP_ID }}
+        WHATSAPP_ENABLED: "true"
       run: python scraper.py
-
-    - name: Commit and push changes (local backup)
-      run: |
-        git config --global user.name "Ekayan Auto-Scraper"
-        git config --global user.email "actions@github.com"
-        git add pending.json
-        git commit -m "Auto-update scraped opportunities backup [skip ci]" || exit 0
-        git push

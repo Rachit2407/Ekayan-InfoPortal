@@ -38,11 +38,12 @@ if sys.platform.startswith('win'):
 #  CONFIG — Add your Gemini API key here
 # ─────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://eolzuwwnusmtvssolavt.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVvbHp1d3dudXNtdHZzc29sYXZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5NTAzMjIsImV4cCI6MjA5NTUyNjMyMn0.Zzu_LzCQzEZZtj3B3WD85-uWG6KMyGK1BlMxh4gbY60")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://xzbnlvqeesxwtidsupvy.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh6Ym5sdnFlZXN4d3RpZHN1cHZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1NzUzODIsImV4cCI6MjEwMTE1MTM4Mn0.mU1iW3l66zb7eixpf4KqwEntCcyG90MnFNzmW74oeO4")
 
 # Toggle this to True when you want to sync opportunities to Supabase cloud database
-USE_SUPABASE = False
+USE_SUPABASE = True
+import db
 
 SOURCES_FILE = "sources.json"
 PENDING_FILE = "pending.json"
@@ -271,11 +272,11 @@ def main():
         return
     
     # Load existing pending items (to avoid duplicates)
-    existing_pending = load_json(PENDING_FILE)
+    existing_pending = db.get_pending()
     existing_titles = {item.get("title", "").lower() for item in existing_pending}
     
     # Also fetch existing titles from Supabase to prevent double scraping
-    db_titles = get_existing_titles_from_supabase()
+    db_titles = db.get_existing_titles_from_supabase()
     existing_titles.update(db_titles)
     
     new_items = []
@@ -317,9 +318,8 @@ def main():
                     print(f"      ⏭ Skipped (duplicate): {item.get('title')}")
     
     if new_items:
-        combined = existing_pending + new_items
-        save_json(PENDING_FILE, combined)
-        print(f"\n🎉 Done! {len(new_items)} new opportunity/ies added to pending.json")
+        db.save_pending(new_items)
+        print(f"\n🎉 Done! {len(new_items)} new opportunity/ies synced to Supabase")
         
         # Trigger WhatsApp notification to the Admin
         try:
@@ -329,7 +329,6 @@ def main():
         except Exception as wa_err:
             print(f"   ⚠ Failed to trigger WhatsApp admin notification: {wa_err}")
 
-        push_to_supabase(new_items)
         print("   → Open admin.html or reply via WhatsApp to approve them.")
     else:
         print("\n✅ No new opportunities found this run.")

@@ -3,6 +3,7 @@ import sys
 import json
 import subprocess
 from flask import Flask, request, jsonify, send_from_directory
+import db
 
 # Force UTF-8 on Windows to prevent emoji encoding crashes
 if sys.platform.startswith('win'):
@@ -23,14 +24,10 @@ def load_env():
         pass
 
 def load_pending():
-    if not os.path.exists(PENDING_FILE):
-        return []
-    with open(PENDING_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return db.get_pending()
 
 def save_pending(data):
-    with open(PENDING_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    return db.save_pending(data)
 
 # Initialize Flask app
 # Serving static files directly from the current directory
@@ -143,9 +140,9 @@ def approve_opportunity():
             break
 
     if not item:
-        return jsonify({"success": False, "error": f"Opportunity '{opp_id}' not found in pending.json"}), 404
+        return jsonify({"success": False, "error": f"Opportunity '{opp_id}' not found"}), 404
 
-    save_pending(pending)
+    db.update_opportunity_status(opp_id, "approved")
     print(f"\n[Server] ✅ Approved: {item.get('title')}")
 
     wa_sent = False
