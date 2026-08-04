@@ -63,7 +63,14 @@ def save_json_file(filepath, data):
 # ─── WhatsApp Sending Utilities ──────────────────────────────────────────────
 def send_whatsapp_text(to_number, text_message) -> bool:
     """Sends a basic raw text message to any verified number."""
-    if not WHATSAPP_ENABLED or not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+    if not WHATSAPP_ENABLED:
+        print("[WA Notifier] WhatsApp is disabled (WHATSAPP_ENABLED is not true).")
+        return False
+    if not WHATSAPP_TOKEN:
+        print("[WA Notifier] Missing WHATSAPP_TOKEN in environment.")
+        return False
+    if not PHONE_NUMBER_ID:
+        print("[WA Notifier] Missing PHONE_NUMBER_ID in environment.")
         return False
 
     payload = {
@@ -131,7 +138,11 @@ def notify_admin_new_opportunities(new_items: list):
     Called by scraper.py. Sends the admin a numbered list of new items to approve.
     Saves the list mapping to state.json.
     """
-    if not ADMIN_WAID or not new_items:
+    if not ADMIN_WAID:
+        print("[WA Notifier] Missing ADMIN_WAID in environment.")
+        return
+    if not new_items:
+        print("[WA Notifier] No new items to notify admin about.")
         return
 
     # Load existing state or start fresh
