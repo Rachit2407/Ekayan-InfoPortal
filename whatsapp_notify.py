@@ -23,6 +23,12 @@ ADMIN_WAID       = os.getenv("ADMIN_WAID", "")
 STUDENT_GROUP_ID = os.getenv("STUDENT_GROUP_ID", "")
 WHATSAPP_ENABLED = os.getenv("WHATSAPP_ENABLED", "false").lower() == "true"
 
+print(f"[DEBUG WA Config] WHATSAPP_ENABLED={WHATSAPP_ENABLED}")
+print(f"[DEBUG WA Config] WHATSAPP_TOKEN length={len(WHATSAPP_TOKEN) if WHATSAPP_TOKEN else 0}")
+print(f"[DEBUG WA Config] PHONE_NUMBER_ID={PHONE_NUMBER_ID[:4] if PHONE_NUMBER_ID else 'empty'}...")
+print(f"[DEBUG WA Config] ADMIN_WAID={ADMIN_WAID[:4] if ADMIN_WAID else 'empty'}...")
+
+
 META_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 STATE_FILE = "state.json"
 PENDING_FILE = "pending.json"
