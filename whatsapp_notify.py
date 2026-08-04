@@ -91,7 +91,10 @@ def send_whatsapp_text(to_number, text_message) -> bool:
     }
 
     try:
+        print(f"[WA Notifier] Sending HTTP POST to Meta API...")
         resp = requests.post(META_API_URL, json=payload, headers=headers, timeout=15)
+        print(f"[WA Notifier] Response Status Code: {resp.status_code}")
+        print(f"[WA Notifier] Response Body: {resp.text}")
         resp.raise_for_status()
         return True
     except Exception as e:
