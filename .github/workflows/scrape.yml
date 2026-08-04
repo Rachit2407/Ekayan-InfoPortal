@@ -33,4 +33,6 @@ jobs:
         ADMIN_WAID: ${{ secrets.ADMIN_WAID }}
         STUDENT_GROUP_ID: ${{ secrets.STUDENT_GROUP_ID }}
         WHATSAPP_ENABLED: "true"
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
       run: python scraper.py

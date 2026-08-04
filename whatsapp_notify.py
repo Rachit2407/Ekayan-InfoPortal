@@ -277,7 +277,15 @@ def process_admin_decision(action, item_number):
     db.save_bot_state(state)
     
     if action == "APPROVE":
-        # Post to the student group channel
+        # Post to the Telegram student channel
+        tg_success = False
+        try:
+            from telegram_notify import notify_channel_new_opportunity
+            tg_success = notify_channel_new_opportunity(target_item)
+        except Exception as tg_err:
+            print(f"[Telegram Notify] Error importing/posting: {tg_err}")
+
+        # Post to the student group channel (WhatsApp)
         wa_success = send_opportunity_notification(target_item)
         
         # Save to live list (opportunities.json) for web UI
@@ -296,9 +304,16 @@ def process_admin_decision(action, item_number):
         })
         save_json_file("opportunities.json", live)
         
-        status_msg = f"✅ Approved: *{title}* has been posted to the students group!"
-        if not wa_success:
-            status_msg += "\n(Note: WhatsApp API transmission failed. Check logs.)"
+        status_parts = [f"✅ Approved: *{title}*"]
+        if tg_success:
+            status_parts.append("📢 Posted to Telegram student channel!")
+        else:
+            status_parts.append("⚠ Failed to post to Telegram. Check logs.")
+        
+        if wa_success:
+            status_parts.append("💬 Sent via WhatsApp alert.")
+            
+        status_msg = "\n".join(status_parts)
         send_whatsapp_text(ADMIN_WAID, status_msg)
     else:
         send_whatsapp_text(ADMIN_WAID, f"❌ Rejected: *{title}* was removed from the queue.")
