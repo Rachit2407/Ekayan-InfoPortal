@@ -41,6 +41,11 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://xzbnlvqeesxwtidsupvy.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh6Ym5sdnFlZXN4d3RpZHN1cHZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1NzUzODIsImV4cCI6MjEwMTE1MTM4Mn0.mU1iW3l66zb7eixpf4KqwEntCcyG90MnFNzmW74oeO4")
 
+# Auto-correct SUPABASE_URL if it is configured as the Dashboard URL instead of the REST API URL
+if SUPABASE_URL and "supabase.com/dashboard/project/" in SUPABASE_URL:
+    project_ref = SUPABASE_URL.split("supabase.com/dashboard/project/")[-1].split("?")[0].strip("/")
+    SUPABASE_URL = f"https://{project_ref}.supabase.co"
+
 # Toggle this to True when you want to sync opportunities to Supabase cloud database
 USE_SUPABASE = True
 import db

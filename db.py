@@ -16,6 +16,12 @@ try:
 except ImportError:
     pass
 
+# Auto-correct SUPABASE_URL if it is configured as the Dashboard URL instead of the REST API URL
+if SUPABASE_URL and "supabase.com/dashboard/project/" in SUPABASE_URL:
+    project_ref = SUPABASE_URL.split("supabase.com/dashboard/project/")[-1].split("?")[0].strip("/")
+    SUPABASE_URL = f"https://{project_ref}.supabase.co"
+
+
 def _get_headers(content_type=False, prefer_upsert=False):
     headers = {
         "apikey": SUPABASE_KEY,
