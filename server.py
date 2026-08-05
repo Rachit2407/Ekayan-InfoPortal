@@ -87,7 +87,7 @@ def debug_db():
         pending = db.get_pending()
         return jsonify({
             "success": True,
-            "supabase_url_prefix": db.SUPABASE_URL[:15] if db.SUPABASE_URL else None,
+            "supabase_url": db.SUPABASE_URL,
             "state_keys": list(state.keys()) if state else [],
             "pending_count": len(pending),
             "state_raw": state
