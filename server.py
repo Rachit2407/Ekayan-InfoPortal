@@ -80,24 +80,6 @@ def receive_webhook():
         
     return jsonify({"status": "ok"}), 200
 
-@app.route('/debug-db', methods=['GET'])
-def debug_db():
-    try:
-        state = db.get_bot_state()
-        pending = db.get_pending()
-        return jsonify({
-            "success": True,
-            "supabase_url": db.SUPABASE_URL,
-            "state_keys": list(state.keys()) if state else [],
-            "pending_count": len(pending),
-            "state_raw": state
-        }), 200
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
 @app.route('/run-scraper', methods=['POST'])
 def run_scraper():
     """Run the scraper.py script."""
