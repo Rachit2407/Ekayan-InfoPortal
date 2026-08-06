@@ -23,7 +23,7 @@ from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
-import google.generativeai as genai
+from google import genai
 import sys
 
 # Force Windows console to encode output in UTF-8 to prevent emoji crash (charmap codec errors)
@@ -55,9 +55,11 @@ PENDING_FILE = "pending.json"
 TODAY = datetime.today().strftime("%Y-%m-%d")
 
 # ─────────────────────────────────────────────
-#  SETUP GEMINI & SUPABASE HELPERS
+#  SETUP GEMINI CLIENT & SUPABASE HELPERS
 # ─────────────────────────────────────────────
-genai.configure(api_key=GEMINI_API_KEY)
+ai_client = None
+if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_HERE":
+    ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 def get_existing_titles_from_supabase() -> set:
@@ -136,43 +138,83 @@ Return ONLY a valid JSON array. No explanation text.
 
 
 def fetch_page_text(url: str) -> str:
-    """Fetch a webpage and return its plain text content."""
+    """Fetch a webpage and return its plain text content.
+    If plain HTTP request fails or returns minimal content (<300 chars),
+    automatically fall back to Playwright headless Chromium for JS rendering.
+    """
+    text = ""
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; EkayanBot/1.0)"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
         resp = requests.get(url, headers=headers, timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
-        # Remove script/style noise
         for tag in soup(["script", "style", "nav", "footer", "header"]):
             tag.decompose()
-        return soup.get_text(separator="\n", strip=True)[:15000]  # cap at 15k chars
+        text = soup.get_text(separator="\n", strip=True)
     except Exception as e:
-        print(f"  ⚠ Could not fetch {url}: {e}")
-        return ""
+        print(f"  ℹ HTTP fetch note ({url}): {e}")
+
+    # If HTTP text is sufficient (>= 300 chars), return it directly
+    if len(text) >= 300:
+        return text[:15000]
+
+    # Fallback to Playwright Headless Browser for dynamic JS pages
+    try:
+        from playwright.sync_api import sync_playwright
+        print(f"   🎭 Low/empty static content. Running Playwright headless browser for JS rendering...")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            page.goto(url, wait_until="domcontentloaded", timeout=25000)
+            page.wait_for_timeout(2000)
+            content = page.content()
+            browser.close()
+            
+            soup = BeautifulSoup(content, "html.parser")
+            for tag in soup(["script", "style", "nav", "footer", "header"]):
+                tag.decompose()
+            pw_text = soup.get_text(separator="\n", strip=True)
+            if len(pw_text) > len(text):
+                print(f"   ✅ Playwright retrieved {len(pw_text)} characters.")
+                return pw_text[:15000]
+    except Exception as pw_err:
+        print(f"  ⚠ Playwright browser fallback skipped/failed: {pw_err}")
+
+    return text[:15000] if text else ""
 
 
 def extract_opportunities(page_text: str, source_url: str, category_hint: str) -> list:
-    """Call Gemini API to extract structured opportunities from page text."""
-    if not page_text.strip():
+    """Call Gemini API via google.genai Client to extract structured opportunities."""
+    if not page_text or len(page_text.strip()) < 150:
+        print("  ⚠ Page text too short or empty to extract opportunities. Skipping.")
         return []
     
+    if not ai_client:
+        print("  ⚠ Gemini Client not initialized. Check GEMINI_API_KEY.")
+        return []
+        
     prompt = EXTRACTION_PROMPT.format(today=TODAY, content=page_text)
     response = None
     
-    # Try the latest Gemini models available on the API key
-    for model_name in ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"]:
+    # Standard models supported by google.genai SDK
+    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash"]
+    for model_name in models_to_try:
         try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            break
+            response = ai_client.models.generate_content(
+                model=model_name,
+                contents=prompt
+            )
+            if response and getattr(response, "text", None):
+                break
         except Exception as e:
-            if model_name != "gemini-flash-latest":
-                print(f"  ℹ Model {model_name} failed. Trying next fallback...")
+            if model_name != models_to_try[-1]:
+                print(f"  ℹ Model {model_name} failed/unavailable. Trying next fallback ({models_to_try[-1]})...")
             else:
-                print(f"  ⚠ Gemini extraction error ({model_name}): {e}")
+                print(f"  ⚠ Gemini extraction error across models: {e}")
                 return []
                 
-    if not response:
+    if not response or not getattr(response, "text", None):
+        print("  ⚠ Gemini API returned an empty or blocked response. Skipping page.")
         return []
 
     try:
@@ -182,8 +224,13 @@ def extract_opportunities(page_text: str, source_url: str, category_hint: str) -
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
-        
+        if raw.endswith("```"):
+            raw = raw[:-3].strip()
+            
         items = json.loads(raw)
+        if not isinstance(items, list):
+            print("  ⚠ Gemini returned invalid non-list JSON format. Skipping.")
+            return []
         
         # Stamp each item with metadata
         for item in items:
@@ -196,14 +243,13 @@ def extract_opportunities(page_text: str, source_url: str, category_hint: str) -
                 item["category"] = category_hint or "scholarships"
                 
             # If the extracted link is a root homepage (e.g. www.buddy4study.com), fall back to source_url
-            link = item.get("link", "").strip()
+            link = str(item.get("link") or "").strip()
             if not link:
                 item["link"] = source_url
             else:
                 from urllib.parse import urlparse
                 try:
                     parsed = urlparse(link)
-                    # Check if the path is empty, root, or missing and there are no search parameters
                     if parsed.netloc and (parsed.path in ('', '/')) and not parsed.query and source_url:
                         item["link"] = source_url
                 except Exception:
@@ -211,7 +257,7 @@ def extract_opportunities(page_text: str, source_url: str, category_hint: str) -
         
         return items
     except Exception as e:
-        print(f"  ⚠ Gemini processing error: {e}")
+        print(f"  ⚠ Gemini response parsing error: {e}")
         return []
 
 

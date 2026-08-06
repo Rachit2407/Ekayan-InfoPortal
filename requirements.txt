@@ -3,5 +3,6 @@ gunicorn
 requests
 beautifulsoup4
 lxml
-google-generativeai
+google-genai
+playwright
 python-dotenv
