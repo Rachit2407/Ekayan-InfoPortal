@@ -183,6 +183,25 @@ def fetch_page_text(url: str) -> str:
     return text[:15000] if text else ""
 
 
+def get_available_gemini_models() -> list:
+    """Dynamically query Gemini API for available generation models, fallback to standard candidates."""
+    candidates = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash"]
+    if ai_client:
+        try:
+            found = []
+            for m in ai_client.models.list():
+                name = m.name.replace("models/", "") if hasattr(m, "name") else str(m)
+                methods = getattr(m, "supported_generation_methods", []) or []
+                if "generateContent" in methods or not methods:
+                    if "flash" in name.lower() or "gemini" in name.lower():
+                        found.append(name)
+            if found:
+                return found
+        except Exception as e:
+            print(f"  ℹ Model auto-discovery note: {e}")
+    return candidates
+
+
 def extract_opportunities(page_text: str, source_url: str, category_hint: str) -> list:
     """Call Gemini API via google.genai Client to extract structured opportunities."""
     if not page_text or len(page_text.strip()) < 150:
@@ -196,8 +215,8 @@ def extract_opportunities(page_text: str, source_url: str, category_hint: str) -
     prompt = EXTRACTION_PROMPT.format(today=TODAY, content=page_text)
     response = None
     
-    # Standard models supported by google.genai SDK
-    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash"]
+    # Models list (tries auto-discovered models first, then fallback candidates)
+    models_to_try = get_available_gemini_models()
     for model_name in models_to_try:
         try:
             response = ai_client.models.generate_content(
@@ -208,9 +227,9 @@ def extract_opportunities(page_text: str, source_url: str, category_hint: str) -
                 break
         except Exception as e:
             if model_name != models_to_try[-1]:
-                print(f"  ℹ Model {model_name} failed/unavailable. Trying next fallback ({models_to_try[-1]})...")
+                print(f"  ℹ Model {model_name} unavailable: {e}. Trying next fallback...")
             else:
-                print(f"  ⚠ Gemini extraction error across models: {e}")
+                print(f"  ⚠ Gemini extraction error across models ({model_name}): {e}")
                 return []
                 
     if not response or not getattr(response, "text", None):
