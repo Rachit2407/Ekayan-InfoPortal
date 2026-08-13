@@ -8,6 +8,7 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID", "")
+TELEGRAM_ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
 
 def send_telegram_message(text_message: str, parse_mode: str = "HTML") -> bool:
     """Sends a message to the Telegram channel using the Bot API."""
@@ -95,6 +96,70 @@ def notify_channel_new_opportunity(opportunity: dict) -> bool:
     else:
         print("[Telegram Notify] Failed to post opportunity to channel.")
     return success
+
+
+def send_pipeline_run_report(stats: dict) -> bool:
+    """Sends a summary report of the scraper pipeline execution to the admin chat."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_ADMIN_CHAT_ID:
+        print("[Telegram Notify] Missing TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID in env. Skipping admin run report.")
+        return False
+
+    admin_chat_id = TELEGRAM_ADMIN_CHAT_ID
+
+    emoji_status = "✅" if not stats.get("errors") else "⚠️"
+    
+    report = (
+        f"{emoji_status} <b>Ekayan Scraper Run Report</b>\n"
+        f"📅 <b>Date:</b> {stats.get('date', 'N/A')}\n"
+        f"──────────────────\n\n"
+    )
+    
+    # Summary of changes
+    report += (
+        f"📋 <b>Overall Summary:</b>\n"
+        f"• <b>Total Discovered URLs:</b> {stats.get('total_discovered_urls', 0)}\n"
+        f"• <b>Total Scanned URLs:</b> {stats.get('total_scanned_urls', 0)}\n"
+        f"• <b>New Opportunities Found:</b> {stats.get('total_new_opportunities', 0)}\n\n"
+    )
+    
+    # Details per source
+    report += "🔍 <b>Source Details:</b>\n"
+    for s_label, s_stats in stats.get("sources", {}).items():
+        report += (
+            f"📍 <b>{s_label}</b>\n"
+            f"  ▫️ Discovered: {s_stats.get('discovered', 0)} | Scanned: {s_stats.get('scanned', 0)}\n"
+            f"  ▫️ Found: {s_stats.get('found', 0)} new items\n"
+        )
+        if s_stats.get("errors"):
+            report += f"  ❌ <b>Errors:</b> {html.escape(s_stats.get('errors')[0])}\n"
+        report += "\n"
+        
+    if stats.get("errors"):
+        report += f"⚠️ <b>Pipeline Warnings/Errors:</b>\n"
+        for err in stats.get("errors")[:3]:  # Show first 3 errors to avoid length overflow
+            report += f"• <i>{html.escape(str(err))}</i>\n"
+        report += "\n"
+        
+    report += "⚙️ <i>Admin monitoring channel</i>"
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": admin_chat_id,
+        "text": report,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
+
+    try:
+        resp = requests.post(url, json=payload, timeout=15)
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"[Telegram Notify] Error sending pipeline run report: {e}")
+        if 'resp' in locals():
+            print(f"[Telegram Notify] API Response: {resp.text}")
+        return False
+
 
 if __name__ == "__main__":
     # Small test block to run locally

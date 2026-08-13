@@ -215,9 +215,56 @@ body {
   gap: 4px;
 }
 
-.card-deadline.urgent {
-  color: var(--danger);
+.card-deadline.closing-soon {
+  color: #ff4a4a;
+  background: rgba(255, 74, 74, 0.12);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 74, 74, 0.25);
+  animation: pulse-border 2s infinite;
+}
+
+.card-deadline.closes-warning {
+  color: #ffaa00;
+  background: rgba(255, 170, 0, 0.1);
+  padding: 4px 8px;
+  border-radius: 6px;
   font-weight: 600;
+  border: 1px solid rgba(255, 170, 0, 0.2);
+}
+
+.card-deadline.normal {
+  color: var(--text-secondary);
+}
+
+.card-source {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--card-border);
+  font-weight: 500;
+  transition: var(--transition);
+}
+
+.card-source:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--text-secondary);
+  color: white;
+}
+
+@keyframes pulse-border {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 74, 74, 0.3);
+  }
+  70% {
+    box-shadow: 0 0 0 4px rgba(255, 74, 74, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 74, 74, 0);
+  }
 }
 
 .card-title {

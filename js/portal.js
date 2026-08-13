@@ -44,18 +44,28 @@ document.addEventListener('DOMContentLoaded', () => {
     filtered.forEach(opp => {
       // Calculate days left
       let deadlineText = 'No deadline';
-      let isUrgent = false;
+      let deadlineClass = '';
       if (opp.deadline) {
         const d1 = new Date(today);
         const d2 = new Date(opp.deadline);
-        const diffTime = Math.abs(d2 - d1);
+        const diffTime = d2 - d1;
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
-        if (diffDays <= 7) {
-          isUrgent = true;
-          deadlineText = `Closing in ${diffDays} day${diffDays > 1 ? 's' : ''}`;
+        if (diffDays < 0) {
+          deadlineText = 'Expired';
+          deadlineClass = 'expired';
+        } else if (diffDays === 0) {
+          deadlineText = '⚠️ Closes Today!';
+          deadlineClass = 'closing-soon';
+        } else if (diffDays <= 3) {
+          deadlineText = `⚠️ Closing in ${diffDays} day${diffDays > 1 ? 's' : ''}!`;
+          deadlineClass = 'closing-soon';
+        } else if (diffDays <= 7) {
+          deadlineText = `📅 Closes in ${diffDays} days`;
+          deadlineClass = 'closes-warning';
         } else {
-          deadlineText = `Closes: ${new Date(opp.deadline).toLocaleDateString('en-GB')}`;
+          deadlineText = `📅 Closes: ${new Date(opp.deadline).toLocaleDateString('en-GB')}`;
+          deadlineClass = 'normal';
         }
       }
 
@@ -70,19 +80,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } catch (e) {}
 
+      // Get source name from URL
+      let sourceName = 'Official Website';
+      try {
+        if (displayLink && displayLink !== '#') {
+          const u = new URL(displayLink.trim());
+          let host = u.hostname.replace('www.', '');
+          if (host.includes('buddy4study.com')) sourceName = 'Buddy4Study';
+          else if (host.includes('shiksha.com')) sourceName = 'Shiksha';
+          else if (host.includes('careers360.com')) sourceName = 'Careers360';
+          else sourceName = host;
+        }
+      } catch (e) {}
+
       const card = document.createElement('div');
       card.className = 'card';
       card.innerHTML = `
         <div class="card-header">
           <span class="card-category">${opp.category}</span>
-          <span class="card-deadline ${isUrgent ? 'urgent' : ''}">
-            ${isUrgent ? '⚠️ ' : '📅 '} ${deadlineText}
+          <span class="card-deadline ${deadlineClass}">
+            ${deadlineText}
           </span>
         </div>
         <h3 class="card-title">${opp.title}</h3>
         <div class="card-org">${opp.organization}</div>
         <p class="card-desc">${opp.description}</p>
         <div class="card-footer">
+          <span class="card-source" title="${displayLink}">Source: ${sourceName}</span>
           <a href="${displayLink}" target="_blank" class="btn btn-primary">Apply / More Info</a>
         </div>
       `;

@@ -18,6 +18,11 @@ Requirements:
 
 import json
 import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 import uuid
 from datetime import datetime
 
@@ -137,69 +142,149 @@ Return ONLY a valid JSON array. No explanation text.
 """.strip()
 
 
-def fetch_page_text(url: str) -> str:
-    """Fetch a webpage and return its plain text content.
+DEADLINE_PROMPT = """
+You are an assistant helping an Indian NGO called Ekayan Foundation find opportunities for underprivileged youth.
+
+Below is the text content of a detail webpage for an opportunity (such as a scholarship or fellowship).
+Extract the application deadline date for this opportunity.
+
+Return ONLY the date in YYYY-MM-DD format (e.g. 2026-08-31) if a valid deadline date is found, or "null" if no deadline is specified or if it is not found.
+Do not write any explanation, introduction, markdown code fences, or punctuation. Just return the date or "null".
+
+Today's date is {today}.
+
+Webpage content:
+---
+{content}
+---
+
+Return ONLY the YYYY-MM-DD date or "null".
+""".strip()
+
+
+def extract_deadline_from_detail_page(page_text: str) -> str:
+    """Call Gemini to extract a deadline in YYYY-MM-DD format from detail page text."""
+    if not page_text or len(page_text.strip()) < 100:
+        return ""
+    if not ai_client:
+        return ""
+        
+    prompt = DEADLINE_PROMPT.format(today=TODAY, content=page_text)
+    
+    models_to_try = get_available_gemini_models()
+    for model_name in models_to_try:
+        try:
+            response = ai_client.models.generate_content(
+                model=model_name,
+                contents=prompt
+            )
+            if response and getattr(response, "text", None):
+                raw = response.text.strip().replace("`", "").replace("'", "").replace('"', "")
+                import re
+                date_match = re.search(r'\d{4}-\d{2}-\d{2}', raw)
+                if date_match:
+                    return date_match.group(0)
+        except Exception:
+            pass
+    return ""
+
+
+def fetch_page_content(url: str, return_html: bool = False) -> str:
+    """Fetch a webpage and return its content (HTML or plain text).
     If plain HTTP request fails or returns minimal content (<300 chars),
     automatically fall back to Playwright headless Chromium for JS rendering.
     """
-    text = ""
+    html_content = ""
+    text_content = ""
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        }
         resp = requests.get(url, headers=headers, timeout=15)
         resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-        for tag in soup(["script", "style", "nav", "footer", "header"]):
-            tag.decompose()
-        text = soup.get_text(separator="\n", strip=True)
+        html_content = resp.text
+        
+        if not return_html:
+            soup = BeautifulSoup(html_content, "html.parser")
+            for tag in soup(["script", "style", "nav", "footer", "header"]):
+                tag.decompose()
+            from urllib.parse import urljoin
+            for a in soup.find_all("a", href=True):
+                href = a["href"].strip()
+                if href and not href.startswith("#") and "javascript:" not in href.lower():
+                    a.replace_with(f"{a.get_text()} (Link: {urljoin(url, href)})")
+            text_content = soup.get_text(separator="\n", strip=True)
     except Exception as e:
         print(f"  ℹ HTTP fetch note ({url}): {e}")
 
-    # If HTTP text is sufficient (>= 300 chars), return it directly
-    if len(text) >= 300:
-        return text[:15000]
+    # If HTTP text is sufficient (>= 300 chars), return it/HTML directly
+    if return_html and html_content:
+        return html_content
+    elif not return_html and len(text_content) >= 300:
+        return text_content[:15000]
 
-    # Fallback to Playwright Headless Browser for dynamic JS pages
+    # Fallback to Playwright Headless Browser with stealth settings
     try:
         from playwright.sync_api import sync_playwright
         print(f"   🎭 Low/empty static content. Running Playwright headless browser for JS rendering...")
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            try:
+                browser = p.chromium.launch(
+                    headless=True,
+                    channel="chrome",
+                    args=['--disable-blink-features=AutomationControlled']
+                )
+            except Exception:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=['--disable-blink-features=AutomationControlled']
+                )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 720},
+                locale="en-US"
+            )
+            page = context.new_page()
+            page.add_init_script("delete navigator.__proto__.webdriver;")
             page.goto(url, wait_until="domcontentloaded", timeout=25000)
             page.wait_for_timeout(2000)
-            content = page.content()
+            pw_html = page.content()
             browser.close()
             
-            soup = BeautifulSoup(content, "html.parser")
+            if return_html:
+                return pw_html
+                
+            soup = BeautifulSoup(pw_html, "html.parser")
             for tag in soup(["script", "style", "nav", "footer", "header"]):
                 tag.decompose()
+            from urllib.parse import urljoin
+            for a in soup.find_all("a", href=True):
+                href = a["href"].strip()
+                if href and not href.startswith("#") and "javascript:" not in href.lower():
+                    a.replace_with(f"{a.get_text()} (Link: {urljoin(url, href)})")
             pw_text = soup.get_text(separator="\n", strip=True)
-            if len(pw_text) > len(text):
+            if len(pw_text) > len(text_content):
                 print(f"   ✅ Playwright retrieved {len(pw_text)} characters.")
                 return pw_text[:15000]
     except Exception as pw_err:
         print(f"  ⚠ Playwright browser fallback skipped/failed: {pw_err}")
 
-    return text[:15000] if text else ""
+    return html_content if return_html else (text_content[:15000] if text_content else "")
+
+
+def fetch_page_text(url: str) -> str:
+    """Fetch plain text content of a page."""
+    return fetch_page_content(url, return_html=False)
+
+
+def fetch_page_html(url: str) -> str:
+    """Fetch raw HTML content of a page."""
+    return fetch_page_content(url, return_html=True)
 
 
 def get_available_gemini_models() -> list:
-    """Dynamically query Gemini API for available generation models, fallback to standard candidates."""
-    candidates = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash"]
-    if ai_client:
-        try:
-            found = []
-            for m in ai_client.models.list():
-                name = m.name.replace("models/", "") if hasattr(m, "name") else str(m)
-                methods = getattr(m, "supported_generation_methods", []) or []
-                if "generateContent" in methods or not methods:
-                    if "flash" in name.lower() or "gemini" in name.lower():
-                        found.append(name)
-            if found:
-                return found
-        except Exception as e:
-            print(f"  ℹ Model auto-discovery note: {e}")
-    return candidates
+    """Return standard verified Gemini generation models."""
+    return ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 
 
 def extract_opportunities(page_text: str, source_url: str, category_hint: str) -> list:
@@ -319,6 +404,46 @@ def discover_sitemap_urls(sitemap_url: str, max_urls: int = 5) -> list:
         return []
 
 
+def discover_urls_from_category_page(category_url: str, max_urls: int = 5, filter_keywords: list = None) -> list:
+    """Fetch a category listing page and return relevant opportunity links."""
+    try:
+        print(f"   🔍 Discovering links from category page: {category_url}...")
+        html = fetch_page_html(category_url)
+        if not html:
+            return []
+            
+        soup = BeautifulSoup(html, "html.parser")
+        links = []
+        from urllib.parse import urljoin
+        
+        for a in soup.find_all("a", href=True):
+            href = a["href"].strip()
+            if not href or href.startswith("#") or "javascript:" in href.lower():
+                continue
+                
+            full_url = urljoin(category_url, href)
+            
+            # Skip the category page itself
+            if full_url.rstrip("/") == category_url.rstrip("/"):
+                continue
+                
+            # Filter links by keywords in the URL or the anchor text
+            if filter_keywords:
+                if not any(kw in full_url.lower() or kw in a.get_text().lower() for kw in filter_keywords):
+                    continue
+                    
+            if full_url not in links:
+                links.append(full_url)
+                if len(links) >= max_urls:
+                    break
+                    
+        print(f"   ✅ Discovered {len(links)} articles from category page to scan.")
+        return links
+    except Exception as e:
+        print(f"  ⚠ Category page discovery error: {e}")
+        return []
+
+
 def main():
     print("=" * 50)
     print("  Ekayan Info Portal — AI Scraper")
@@ -342,28 +467,58 @@ def main():
         return
     
     # Load existing pending items (to avoid duplicates)
-    existing_pending = db.get_pending()
+    existing_pending = db.get_pending() if USE_SUPABASE else []
     existing_titles = {item.get("title", "").lower() for item in existing_pending}
     
     # Also fetch existing titles from Supabase to prevent double scraping
-    db_titles = db.get_existing_titles_from_supabase()
+    db_titles = db.get_existing_titles_from_supabase() if USE_SUPABASE else set()
     existing_titles.update(db_titles)
     
     new_items = []
+    
+    run_stats = {
+        "date": TODAY,
+        "total_discovered_urls": 0,
+        "total_scanned_urls": 0,
+        "total_new_opportunities": 0,
+        "sources": {},
+        "errors": []
+    }
     
     for source in sources:
         url = source.get("url", "")
         label = source.get("label", url)
         category_hint = source.get("category_hint", "")
         
-        # Check if this is a sitemap for auto-discovery
+        run_stats["sources"][label] = {
+            "discovered": 0,
+            "scanned": 0,
+            "found": 0,
+            "errors": []
+        }
+        
+        # Check if this is a category page, a sitemap, or a direct URL
         urls_to_scan = []
-        if url.endswith(".xml") or "sitemap" in url:
-            print(f"\n🌐 Reading Sitemap: {label}")
-            print(f"   Sitemap URL: {url}")
-            urls_to_scan = discover_sitemap_urls(url, max_urls=5)
-        else:
-            urls_to_scan = [url]
+        source_type = source.get("type", "")
+        try:
+            if source_type == "category_page":
+                print(f"\n🌐 Reading Category Page: {label}")
+                print(f"   Category URL: {url}")
+                filter_kws = source.get("link_filter_keywords", [])
+                urls_to_scan = discover_urls_from_category_page(url, max_urls=5, filter_keywords=filter_kws)
+            elif url.endswith(".xml") or "sitemap" in url or source_type == "sitemap":
+                print(f"\n🌐 Reading Sitemap: {label}")
+                print(f"   Sitemap URL: {url}")
+                urls_to_scan = discover_sitemap_urls(url, max_urls=5)
+            else:
+                urls_to_scan = [url]
+        except Exception as e:
+            print(f"  ⚠ Discovery error for {label}: {e}")
+            run_stats["errors"].append(f"Discovery error ({label}): {e}")
+            run_stats["sources"][label]["errors"].append(str(e))
+            
+        run_stats["sources"][label]["discovered"] = len(urls_to_scan)
+        run_stats["total_discovered_urls"] += len(urls_to_scan)
             
         for scan_url in urls_to_scan:
             if len(urls_to_scan) > 1:
@@ -372,36 +527,75 @@ def main():
                 print(f"\n🌐 Scanning: {label}")
                 print(f"   URL: {scan_url}")
                 
-            page_text = fetch_page_text(scan_url)
-            if not page_text:
-                continue
-            
-            found = extract_opportunities(page_text, scan_url, category_hint)
-            
-            # Deduplicate by title
-            for item in found:
-                if item.get("title", "").lower() not in existing_titles:
-                    new_items.append(item)
-                    existing_titles.add(item.get("title", "").lower())
-                    print(f"      ✅ Found: {item.get('title')}")
-                else:
-                    print(f"      ⏭ Skipped (duplicate): {item.get('title')}")
+            run_stats["total_scanned_urls"] += 1
+            run_stats["sources"][label]["scanned"] += 1
+                 
+            try:
+                page_text = fetch_page_text(scan_url)
+                if not page_text:
+                    run_stats["sources"][label]["errors"].append(f"Empty content from {scan_url}")
+                    continue
+                
+                found = extract_opportunities(page_text, scan_url, category_hint)
+                
+                # Deduplicate by title
+                source_new_count = 0
+                for item in found:
+                    if item.get("title", "").lower() not in existing_titles:
+                        link = item.get("link")
+                        if link and link.startswith("http") and link != scan_url:
+                            if not item.get("deadline") or str(item.get("deadline")).strip().lower() in ["", "null", "none"]:
+                                print(f"      🔍 Detail scanning for deadline: {link}")
+                                detail_text = fetch_page_text(link)
+                                if detail_text and len(detail_text) > 150:
+                                    deadline = extract_deadline_from_detail_page(detail_text)
+                                    if deadline:
+                                        item["deadline"] = deadline
+                                        print(f"         📅 Extracted deadline: {deadline}")
+                                    else:
+                                        print(f"         ℹ No deadline found on detail page.")
+                                        
+                        new_items.append(item)
+                        existing_titles.add(item.get("title", "").lower())
+                        source_new_count += 1
+                        print(f"      ✅ Found: {item.get('title')} (Deadline: {item.get('deadline')})")
+                    else:
+                        print(f"      ⏭ Skipped (duplicate): {item.get('title')}")
+                
+                run_stats["sources"][label]["found"] += source_new_count
+                run_stats["total_new_opportunities"] += source_new_count
+            except Exception as scan_err:
+                print(f"  ⚠ Scan error on {scan_url}: {scan_err}")
+                run_stats["errors"].append(f"Scan error ({scan_url}): {scan_err}")
+                run_stats["sources"][label]["errors"].append(str(scan_err))
     
     if new_items:
-        db.save_pending(new_items)
-        print(f"\n🎉 Done! {len(new_items)} new opportunity/ies synced to Supabase")
-        
-        # Trigger WhatsApp notification to the Admin
-        try:
-            from whatsapp_notify import notify_admin_new_opportunities
-            print("   📲 Sending notification list to WhatsApp admin...")
-            notify_admin_new_opportunities(new_items)
-        except Exception as wa_err:
-            print(f"   ⚠ Failed to trigger WhatsApp admin notification: {wa_err}")
+        if USE_SUPABASE:
+            db.save_pending(new_items)
+            print(f"\n🎉 Done! {len(new_items)} new opportunity/ies synced to Supabase")
+            
+            # Trigger WhatsApp notification to the Admin
+            try:
+                from whatsapp_notify import notify_admin_new_opportunities
+                print("   📲 Sending notification list to WhatsApp admin...")
+                notify_admin_new_opportunities(new_items)
+            except Exception as wa_err:
+                print(f"   ⚠ Failed to trigger WhatsApp admin notification: {wa_err}")
 
-        print("   → Open admin.html or reply via WhatsApp to approve them.")
+            print("   → Open admin.html or reply via WhatsApp to approve them.")
+        else:
+            save_json(PENDING_FILE, new_items)
+            print(f"\n🎉 Dry Run Done! {len(new_items)} new opportunity/ies saved to local {PENDING_FILE}")
     else:
         print("\n✅ No new opportunities found this run.")
+        
+    # Dispatch Telegram report to Admin
+    try:
+        from telegram_notify import send_pipeline_run_report
+        print("\n📲 Dispatching pipeline run report to Telegram...")
+        send_pipeline_run_report(run_stats)
+    except Exception as tg_err:
+        print(f"  ⚠ Failed to send Telegram run report: {tg_err}")
     
     print()
 

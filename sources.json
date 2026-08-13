@@ -5,6 +5,20 @@
       "url": "https://www.buddy4study.com/article/post-sitemap.xml",
       "label": "Buddy4Study Latest Articles (Auto-discovery)",
       "category_hint": "scholarships"
+    },
+    {
+      "url": "https://www.shiksha.com/studyabroad/scholarships",
+      "label": "Shiksha Study Abroad Scholarships",
+      "category_hint": "scholarships",
+      "type": "category_page",
+      "link_filter_keywords": ["scholarship", "fellowship", "admission", "grant", "internship"]
+    },
+    {
+      "url": "https://school.careers360.com/articles/scholarships-in-india",
+      "label": "Careers360 Scholarships in India",
+      "category_hint": "scholarships",
+      "type": "category_page",
+      "link_filter_keywords": ["scholarships-in-india", "scholarships", "fellowship", "scholarship", "admission"]
     }
   ]
 }
