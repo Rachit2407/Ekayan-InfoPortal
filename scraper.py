@@ -59,6 +59,31 @@ SOURCES_FILE = "sources.json"
 PENDING_FILE = "pending.json"
 TODAY = datetime.today().strftime("%Y-%m-%d")
 
+from difflib import SequenceMatcher
+
+def is_similar_title(title_a: str, title_b: str) -> bool:
+    """Returns True if two titles are near-duplicates."""
+    a = title_a.lower().strip()
+    b = title_b.lower().strip()
+    
+    if a == b:
+        return True
+        
+    for suffix in [" - buddy4study", " - careers360", " - shiksha", " scholarship"]:
+        if a + suffix == b or b + suffix == a:
+            return True
+            
+    ratio = SequenceMatcher(None, a, b).ratio()
+    threshold = 0.90 if min(len(a), len(b)) < 25 else 0.85
+    
+    if ratio >= threshold:
+        if len(a) == len(b) and a[:-1] == b[:-1] and a[-1] != b[-1]:
+            if a[-1].isalnum() or b[-1].isalnum():
+                return False
+        return True
+        
+    return False
+
 # ─────────────────────────────────────────────
 #  SETUP GEMINI CLIENT & SUPABASE HELPERS
 # ─────────────────────────────────────────────
@@ -541,7 +566,14 @@ def main():
                 # Deduplicate by title
                 source_new_count = 0
                 for item in found:
-                    if item.get("title", "").lower() not in existing_titles:
+                    is_duplicate = False
+                    item_title = item.get("title", "")
+                    for existing in existing_titles:
+                        if is_similar_title(item_title, existing):
+                            is_duplicate = True
+                            break
+                            
+                    if not is_duplicate:
                         link = item.get("link")
                         if link and link.startswith("http") and link != scan_url:
                             if not item.get("deadline") or str(item.get("deadline")).strip().lower() in ["", "null", "none"]:
@@ -556,7 +588,7 @@ def main():
                                         print(f"         ℹ No deadline found on detail page.")
                                         
                         new_items.append(item)
-                        existing_titles.add(item.get("title", "").lower())
+                        existing_titles.add(item_title.lower())
                         source_new_count += 1
                         print(f"      ✅ Found: {item.get('title')} (Deadline: {item.get('deadline')})")
                     else:

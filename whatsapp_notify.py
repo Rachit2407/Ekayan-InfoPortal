@@ -162,7 +162,7 @@ def notify_admin_new_opportunities(new_items: list):
     pending_review = state.get("pending_review", [])
     
     # Add new items to the review queue with sequential numbers
-    start_num = len(pending_review) + 1
+    start_num = max([item.get("number", 0) for item in pending_review]) + 1 if pending_review else 1
     for i, item in enumerate(new_items):
         pending_review.append({
             "number": start_num + i,
@@ -177,7 +177,7 @@ def notify_admin_new_opportunities(new_items: list):
 
     # Format the WhatsApp message to Admin
     msg = f"🔔 *Ekayan Scraper — {len(new_items)} New Opportunities Found!*\n\n"
-    for item in pending_review[start_num-1:]:
+    for item in pending_review[-len(new_items):]:
         deadline = item.get("deadline") or "No deadline"
         msg += f"{item['number']}️⃣ *{item['title']}*\n"
         msg += f"   🏫 {item['organization']} | 📅 {deadline}\n\n"

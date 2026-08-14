@@ -67,17 +67,58 @@ def verify_webhook():
         print("\n[Server] ❌ Webhook verification FAILED! Token mismatch.")
         return "Forbidden", 403
 
+import threading
+
+def safe_handle_message(body):
+    try:
+        # Check if it has a message
+        entry = body.get("entry", [])
+        if not entry:
+            return
+        changes = entry[0].get("changes", [])
+        if not changes:
+            return
+        value = changes[0].get("value", {})
+        messages = value.get("messages", [])
+        if not messages:
+            return
+            
+        message = messages[0]
+        message_id = message.get("id")
+        if not message_id:
+            return
+            
+        # Check if already processed
+        state = db.get_bot_state()
+        seen_ids = state.get("seen_message_ids", [])
+        if not isinstance(seen_ids, list):
+            seen_ids = []
+            
+        if message_id in seen_ids:
+            print(f"[Server] ⏭ Duplicate message ID {message_id} ignored.")
+            return
+            
+        # Mark this message ID as seen
+        seen_ids = ([message_id] + seen_ids)[:100]
+        state["seen_message_ids"] = seen_ids
+        db.save_bot_state(state)
+        
+        # Now process
+        from whatsapp_notify import handle_incoming_whatsapp_message
+        handle_incoming_whatsapp_message(body)
+    except Exception as e:
+        print(f"[Server] ⚠ Error in background webhook processing: {e}")
+
 @app.route('/webhook', methods=['POST'])
 def receive_webhook():
     """Handle incoming message webhook from Meta."""
     body = request.get_json(force=True, silent=True) or {}
     
-    try:
-        from whatsapp_notify import handle_incoming_whatsapp_message
-        handle_incoming_whatsapp_message(body)
-    except Exception as e:
-        print(f"[Server] ⚠ Error handling incoming webhook message: {e}")
-        
+    # Return 200 OK instantly to Meta, process message in background
+    thread = threading.Thread(target=safe_handle_message, args=(body,))
+    thread.daemon = True
+    thread.start()
+    
     return jsonify({"status": "ok"}), 200
 
 @app.route('/run-scraper', methods=['POST'])
