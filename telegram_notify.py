@@ -36,15 +36,24 @@ def send_telegram_message(text_message: str, parse_mode: str = "HTML") -> bool:
 
 def format_opportunity_card(opp: dict) -> str:
     """Formats an opportunity into a beautiful HTML card for Telegram."""
-    category = html.escape(opp.get("category", "Opportunity").strip().title())
-    title = html.escape(opp.get("title", "New Alert").strip())
-    org = html.escape(opp.get("organization", "N/A").strip())
+    category = opp.get("category") or "Opportunity"
+    category = html.escape(str(category).strip().title())
+
+    title = opp.get("title") or "New Alert"
+    title = html.escape(str(title).strip())
+
+    org = opp.get("organization") or "N/A"
+    org = html.escape(str(org).strip())
+
     deadline = opp.get("deadline")
-    desc = html.escape(opp.get("description", "").strip())
-    link = opp.get("link", "").strip()
+    desc = opp.get("description") or ""
+    desc = html.escape(str(desc).strip())
+
+    link = opp.get("link") or opp.get("source_url") or ""
+    link = str(link).strip()
 
     # Format deadline
-    if not deadline:
+    if not deadline or str(deadline).strip().lower() in ["", "null", "none"]:
         deadline_str = "Flexible"
     else:
         # Expected format is YYYY-MM-DD

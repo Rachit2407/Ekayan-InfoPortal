@@ -353,6 +353,7 @@ def process_admin_decision(action, item_numbers):
 
     success_titles = []
     missing_db_titles = []
+    tg_failed_titles = []
 
     # Process each matched item
     for match in matches:
@@ -369,11 +370,15 @@ def process_admin_decision(action, item_numbers):
         
         if action == "APPROVE":
             # Post to Telegram channel
+            tg_success = False
             try:
                 from telegram_notify import notify_channel_new_opportunity
-                notify_channel_new_opportunity(target_item)
+                tg_success = notify_channel_new_opportunity(target_item)
             except Exception as tg_err:
                 print(f"[Telegram Notify] Error posting to Telegram: {tg_err}")
+
+            if not tg_success:
+                tg_failed_titles.append(title)
 
             # Post to WhatsApp student group
             send_opportunity_notification(target_item)
@@ -412,7 +417,8 @@ def process_admin_decision(action, item_numbers):
         action_verb = "Approved & Published" if action == "APPROVE" else "Rejected & Removed"
         summary_msg += f"✅ *{action_verb} ({len(success_titles)} items):*\n"
         for t in success_titles:
-            summary_msg += f"• {t}\n"
+            suffix = " (⚠️ Telegram post failed)" if t in tg_failed_titles else ""
+            summary_msg += f"• {t}{suffix}\n"
         summary_msg += "\n"
 
     if missing_db_titles:
