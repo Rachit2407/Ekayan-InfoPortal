@@ -144,18 +144,22 @@ def send_opportunity_notification(opportunity: dict) -> bool:
 
 
 def parse_command(text: str):
-    """Normalize and parse admin command text into (command, number_or_None)."""
+    """Normalize and parse admin command text into (command, list_of_numbers_or_None)."""
     text = text.strip()
     
     # Match: LIST (any case, optional trailing words/symbols)
     if re.match(r'^list\b', text, re.IGNORECASE):
         return ("LIST", None)
         
-    # Match: APPROVE/REJECT with number — handles no-space, multi-space, lowercase
-    m = re.match(r'^(approve|reject)\s*(\d+)', text, re.IGNORECASE)
+    # Match: APPROVE/REJECT (any case) followed by digits
+    m = re.match(r'^(approve|reject)\s*(.*)', text, re.IGNORECASE)
     if m:
-        return (m.group(1).upper(), int(m.group(2)))
-        
+        cmd = m.group(1).upper()
+        nums_str = m.group(2)
+        nums = [int(n) for n in re.findall(r'\d+', nums_str)]
+        if nums:
+            return (cmd, nums)
+            
     return (None, None)
 
 
@@ -227,16 +231,19 @@ def notify_admin_new_opportunities(new_items: list):
     
     pending_review = state.get("pending_review", [])
     
-    # Add new items to the review queue with sequential numbers
-    start_num = max([item.get("number", 0) for item in pending_review]) + 1 if pending_review else 1
-    for i, item in enumerate(new_items):
+    # Add new items to the review queue
+    for item in new_items:
         pending_review.append({
-            "number": start_num + i,
+            "number": 0,
             "id": item.get("id"),
             "title": item.get("title"),
             "organization": item.get("organization"),
             "deadline": item.get("deadline")
         })
+
+    # Re-index all numbers from 1 to N
+    for idx, item in enumerate(pending_review):
+        item["number"] = idx + 1
 
     state["pending_review"] = pending_review
     db.save_bot_state(state)
@@ -290,14 +297,14 @@ def handle_incoming_whatsapp_message(payload: dict):
         print(f"[WA Bot] Received message from Admin: '{text}'")
         
         # Command Routing
-        command, num = parse_command(text)
+        command, nums = parse_command(text)
         
         if command == "LIST":
             send_pending_list_to_admin()
-        elif command in ["APPROVE", "REJECT"] and num is not None:
-            process_admin_decision(command, num)
+        elif command in ["APPROVE", "REJECT"] and nums:
+            process_admin_decision(command, nums)
         else:
-            send_whatsapp_text(ADMIN_WAID, "❓ Unknown command.\nAvailable commands:\n• `LIST`\n• `APPROVE <number>`\n• `REJECT <number>`")
+            send_whatsapp_text(ADMIN_WAID, "❓ Unknown command.\nAvailable commands:\n• `LIST`\n• `APPROVE <numbers>` (e.g., `approve 1,2` or `approve 1 2`)\n• `REJECT <numbers>`")
             
     except Exception as e:
         print(f"[WA Bot] Exception inside webhook handler: {e}")
@@ -316,86 +323,109 @@ def send_pending_list_to_admin():
     send_chunked_list(ADMIN_WAID, pending_review, footer)
 
 
-def process_admin_decision(action, item_number):
-    """Approves or rejects a numbered opportunity and updates local json files."""
+def process_admin_decision(action, item_numbers):
+    """Approves or rejects multiple numbered opportunities, then re-indexes the remaining ones."""
     state = db.get_bot_state()
     pending_review = state.get("pending_review", [])
     
-    # Find the opportunity in state list
-    match = None
-    for entry in pending_review:
-        if entry.get("number") == item_number:
-            match = entry
-            break
-            
-    if not match:
-        send_whatsapp_text(ADMIN_WAID, f"⚠ Opportunity #{item_number} not found in the active list. Type `LIST` to see active items.")
+    if not pending_review:
+        send_whatsapp_text(ADMIN_WAID, "⚠ No opportunities currently in review queue.")
         return
-        
-    opp_id = match.get("id")
-    title = match.get("title")
+
+    # Find matching entries based on original numbers
+    matches = []
+    for num in item_numbers:
+        for entry in pending_review:
+            if entry.get("number") == num:
+                if entry not in matches:
+                    matches.append(entry)
+                break
+
+    not_found = [num for num in item_numbers if not any(e.get("number") == num for e in pending_review)]
     
-    # Fetch pending from database
+    if not matches:
+        send_whatsapp_text(ADMIN_WAID, f"⚠ None of the requested numbers {item_numbers} were found in the active queue.")
+        return
+
+    # Fetch all pending items from Supabase in one request for performance
     pending = db.get_pending()
-    target_item = None
-    for item in pending:
-        if item.get("id") == opp_id:
-            target_item = item
-            break
-            
-    if not target_item:
-        send_whatsapp_text(ADMIN_WAID, f"⚠ Opportunity '{title}' no longer exists in the pending list.")
-        return
+    pending_map = {item.get("id"): item for item in pending}
+
+    success_titles = []
+    missing_db_titles = []
+
+    # Process each matched item
+    for match in matches:
+        opp_id = match.get("id")
+        title = match.get("title")
         
-    # Update status in Supabase
-    db.update_opportunity_status(opp_id, "approved" if action == "APPROVE" else "rejected")
+        target_item = pending_map.get(opp_id)
+        if not target_item:
+            missing_db_titles.append(title)
+            continue
+
+        # Update status in Supabase
+        db.update_opportunity_status(opp_id, "approved" if action == "APPROVE" else "rejected")
+        
+        if action == "APPROVE":
+            # Post to Telegram channel
+            try:
+                from telegram_notify import notify_channel_new_opportunity
+                notify_channel_new_opportunity(target_item)
+            except Exception as tg_err:
+                print(f"[Telegram Notify] Error posting to Telegram: {tg_err}")
+
+            # Post to WhatsApp student group
+            send_opportunity_notification(target_item)
+            
+            # Save to live list (opportunities.json) for web UI
+            live = load_json_file("opportunities.json")
+            if not isinstance(live, list):
+                live = []
+            live.append({
+                "id": target_item.get("id"),
+                "category": target_item.get("category"),
+                "title": target_item.get("title"),
+                "organization": target_item.get("organization"),
+                "deadline": target_item.get("deadline"),
+                "description": target_item.get("description"),
+                "link": target_item.get("link") or target_item.get("source_url")
+            })
+            save_json_file("opportunities.json", live)
+            
+        success_titles.append(title)
+
+    # Remove processed matches from local state queue and re-index the remaining items
+    matched_ids = {m.get("id") for m in matches if m.get("title") not in missing_db_titles}
+    pending_review = [e for e in pending_review if e.get("id") not in matched_ids]
     
-    # Remove from state pending queue and save
-    pending_review = [e for e in pending_review if e.get("number") != item_number]
+    # Re-index remaining from 1 onwards
+    for idx, item in enumerate(pending_review):
+        item["number"] = idx + 1
+
     state["pending_review"] = pending_review
     db.save_bot_state(state)
-    
-    if action == "APPROVE":
-        # Post to the Telegram student channel
-        tg_success = False
-        try:
-            from telegram_notify import notify_channel_new_opportunity
-            tg_success = notify_channel_new_opportunity(target_item)
-        except Exception as tg_err:
-            print(f"[Telegram Notify] Error importing/posting: {tg_err}")
 
-        # Post to the student group channel (WhatsApp)
-        wa_success = send_opportunity_notification(target_item)
-        
-        # Save to live list (opportunities.json) for web UI
-        live = load_json_file("opportunities.json")
-        # Ensure it's a list
-        if not isinstance(live, list):
-            live = []
-        live.append({
-            "id": target_item.get("id"),
-            "category": target_item.get("category"),
-            "title": target_item.get("title"),
-            "organization": target_item.get("organization"),
-            "deadline": target_item.get("deadline"),
-            "description": target_item.get("description"),
-            "link": target_item.get("link") or target_item.get("source_url")
-        })
-        save_json_file("opportunities.json", live)
-        
-        status_parts = [f"✅ Approved: *{title}*"]
-        if tg_success:
-            status_parts.append("📢 Posted to Telegram student channel!")
-        else:
-            status_parts.append("⚠ Failed to post to Telegram. Check logs.")
-        
-        if wa_success:
-            status_parts.append("💬 Sent via WhatsApp alert.")
-            
-        status_msg = "\n".join(status_parts)
-        send_whatsapp_text(ADMIN_WAID, status_msg)
-    else:
-        send_whatsapp_text(ADMIN_WAID, f"❌ Rejected: *{title}* was removed from the queue.")
+    # Construct the summary message to admin
+    summary_msg = f"⚙️ *Batch Command Results:*\n\n"
+    if success_titles:
+        action_verb = "Approved & Published" if action == "APPROVE" else "Rejected & Removed"
+        summary_msg += f"✅ *{action_verb} ({len(success_titles)} items):*\n"
+        for t in success_titles:
+            summary_msg += f"• {t}\n"
+        summary_msg += "\n"
+
+    if missing_db_titles:
+        summary_msg += f"⚠ *No Longer in Pending DB ({len(missing_db_titles)} items):*\n"
+        for t in missing_db_titles:
+            summary_msg += f"• {t}\n"
+        summary_msg += "\n"
+
+    if not_found:
+        summary_msg += f"❓ *Numbers Not Found in Queue:* {', '.join(map(str, not_found))}\n\n"
+
+    summary_msg += "👉 Type `LIST` to see the updated queue (numbers are re-indexed from 1)."
+    send_whatsapp_text(ADMIN_WAID, summary_msg)
 
 
 # ─── Direct Script Run ───────────────────────────────────────────────────────
