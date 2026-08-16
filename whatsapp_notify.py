@@ -11,6 +11,8 @@ import os
 import sys
 import json
 import requests
+import re
+from datetime import datetime, date
 from dotenv import load_dotenv
 import db
 
@@ -141,6 +143,70 @@ def send_opportunity_notification(opportunity: dict) -> bool:
     return send_whatsapp_text(STUDENT_GROUP_ID, message)
 
 
+def parse_command(text: str):
+    """Normalize and parse admin command text into (command, number_or_None)."""
+    text = text.strip()
+    
+    # Match: LIST (any case, optional trailing words/symbols)
+    if re.match(r'^list\b', text, re.IGNORECASE):
+        return ("LIST", None)
+        
+    # Match: APPROVE/REJECT with number — handles no-space, multi-space, lowercase
+    m = re.match(r'^(approve|reject)\s*(\d+)', text, re.IGNORECASE)
+    if m:
+        return (m.group(1).upper(), int(m.group(2)))
+        
+    return (None, None)
+
+
+def format_deadline(deadline_str: str) -> str:
+    """Formats deadline with human-readable alert if closing soon."""
+    if not deadline_str or str(deadline_str).strip().lower() in ["", "null", "none"]:
+        return "No deadline"
+    try:
+        d = datetime.strptime(deadline_str, "%Y-%m-%d").date()
+        days_left = (d - date.today()).days
+        if days_left < 0:
+            return f"{deadline_str} ❌ Expired"
+        if days_left == 0:
+            return f"{deadline_str} ⚠️ Closes Today!"
+        if days_left <= 7:
+            return f"{deadline_str} ⚠️ Expires in {days_left}d!"
+        return deadline_str
+    except Exception:
+        return deadline_str
+
+
+def send_chunked_list(to_number: str, items: list, footer: str):
+    """Splits long pending lists to avoid the 4096 character WhatsApp limit."""
+    header = "📋 *Pending Review Queue:*\n\n"
+    MAX_WA_LENGTH = 3500
+    chunks = []
+    current_chunk = header
+    
+    for item in items:
+        org = item.get("organization") or "Unknown"
+        if len(org) > 40 or "unspecified" in org.lower() or "details on linked" in org.lower():
+            org = "Unknown"
+            
+        deadline = format_deadline(item.get("deadline"))
+        
+        line = f"*{item['number']}.* *{item['title']}*\n"
+        line += f"   🏫 {org} | 📅 {deadline}\n\n"
+        
+        if len(current_chunk) + len(line) > MAX_WA_LENGTH:
+            chunks.append(current_chunk)
+            current_chunk = "📋 *(continued)*\n\n" + line
+        else:
+            current_chunk += line
+            
+    current_chunk += footer
+    chunks.append(current_chunk)
+    
+    for chunk in chunks:
+        send_whatsapp_text(to_number, chunk)
+
+
 # ─── Admin Interaction Bot Logic ─────────────────────────────────────────────
 def notify_admin_new_opportunities(new_items: list):
     """
@@ -178,9 +244,13 @@ def notify_admin_new_opportunities(new_items: list):
     # Format the WhatsApp message to Admin
     msg = f"🔔 *Ekayan Scraper — {len(new_items)} New Opportunities Found!*\n\n"
     for item in pending_review[-len(new_items):]:
-        deadline = item.get("deadline") or "No deadline"
-        msg += f"{item['number']}️⃣ *{item['title']}*\n"
-        msg += f"   🏫 {item['organization']} | 📅 {deadline}\n\n"
+        org = item.get("organization") or "Unknown"
+        if len(org) > 40 or "unspecified" in org.lower() or "details on linked" in org.lower():
+            org = "Unknown"
+            
+        deadline = format_deadline(item.get("deadline"))
+        msg += f"*{item['number']}.* *{item['title']}*\n"
+        msg += f"   🏫 {org} | 📅 {deadline}\n\n"
     
     msg += "Reply:\n"
     msg += "👉 *APPROVE <number>* (e.g. `APPROVE 1`)\n"
@@ -214,23 +284,18 @@ def handle_incoming_whatsapp_message(payload: dict):
             return
             
         text = message.get("text", {}).get("body", "").strip()
+        if not text:
+            return
+            
         print(f"[WA Bot] Received message from Admin: '{text}'")
         
         # Command Routing
-        parts = text.split()
-        if not parts:
-            return
-            
-        command = parts[0].upper()
+        command, num = parse_command(text)
         
         if command == "LIST":
             send_pending_list_to_admin()
-        elif command in ["APPROVE", "REJECT"] and len(parts) >= 2:
-            try:
-                num = int(parts[1])
-                process_admin_decision(command, num)
-            except ValueError:
-                send_whatsapp_text(ADMIN_WAID, "⚠ Invalid format. Use: `APPROVE 1` or `REJECT 1`.")
+        elif command in ["APPROVE", "REJECT"] and num is not None:
+            process_admin_decision(command, num)
         else:
             send_whatsapp_text(ADMIN_WAID, "❓ Unknown command.\nAvailable commands:\n• `LIST`\n• `APPROVE <number>`\n• `REJECT <number>`")
             
@@ -247,14 +312,8 @@ def send_pending_list_to_admin():
         send_whatsapp_text(ADMIN_WAID, "✅ No items currently pending review.")
         return
         
-    msg = "📋 *Pending Review Queue:*\n\n"
-    for item in pending_review:
-        deadline = item.get("deadline") or "No deadline"
-        msg += f"{item['number']}️⃣ *{item['title']}*\n"
-        msg += f"   🏫 {item['organization']} | 📅 {deadline}\n\n"
-        
-    msg += "Reply:\n• `APPROVE <number>`\n• `REJECT <number>`"
-    send_whatsapp_text(ADMIN_WAID, msg)
+    footer = "Reply:\n• `APPROVE <number>`\n• `REJECT <number>`"
+    send_chunked_list(ADMIN_WAID, pending_review, footer)
 
 
 def process_admin_decision(action, item_number):
