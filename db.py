@@ -127,13 +127,22 @@ def save_bot_state(state_dict: dict) -> bool:
             print(f"[Supabase DB] Response: {resp.text}")
         return False
 
-def get_existing_titles_from_supabase() -> set:
-    """Fetch all opportunity titles to prevent duplicates."""
-    url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/opportunities?select=title"
+def get_existing_opportunities_from_supabase() -> tuple:
+    """Fetch all opportunity titles and links/source_urls to prevent duplicates."""
+    url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/opportunities?select=title,link,source_url"
     try:
         resp = requests.get(url, headers=_get_headers(), timeout=10)
         resp.raise_for_status()
-        return {item.get("title", "").lower() for item in resp.json() if item.get("title")}
+        titles = set()
+        links = set()
+        for item in resp.json():
+            if item.get("title"):
+                titles.add(item.get("title").lower().strip())
+            if item.get("link"):
+                links.add(str(item.get("link")).lower().strip())
+            if item.get("source_url"):
+                links.add(str(item.get("source_url")).lower().strip())
+        return titles, links
     except Exception as e:
-        print(f"[Supabase DB] Error fetching existing titles: {e}")
-        return set()
+        print(f"[Supabase DB] Error fetching existing opportunities: {e}")
+        return set(), set()

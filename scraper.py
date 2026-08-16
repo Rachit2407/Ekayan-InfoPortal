@@ -73,6 +73,11 @@ def is_similar_title(title_a: str, title_b: str) -> bool:
         if a + suffix == b or b + suffix == a:
             return True
             
+    # Substring matching (e.g. "Doctoral Research Grants" and "Al Qasimi Foundation Doctoral Research Grants")
+    if len(a) >= 12 and len(b) >= 12:
+        if a in b or b in a:
+            return True
+            
     ratio = SequenceMatcher(None, a, b).ratio()
     threshold = 0.90 if min(len(a), len(b)) < 25 else 0.85
     
@@ -92,23 +97,31 @@ if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_HERE":
     ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
-def get_existing_titles_from_supabase() -> set:
-    """Fetch existing titles from Supabase to prevent duplicates."""
+def get_existing_opportunities_from_supabase() -> tuple:
+    """Fetch existing titles and links/source_urls from Supabase to prevent duplicates."""
     if not USE_SUPABASE or not SUPABASE_URL or not SUPABASE_KEY:
-        return set()
+        return set(), set()
     try:
-        url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/opportunities?select=title"
+        url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/opportunities?select=title,link,source_url"
         headers = {
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}"
         }
         resp = requests.get(url, headers=headers, timeout=10)
         resp.raise_for_status()
-        titles = {item.get("title", "").lower() for item in resp.json() if item.get("title")}
-        return titles
+        titles = set()
+        links = set()
+        for item in resp.json():
+            if item.get("title"):
+                titles.add(item.get("title").lower().strip())
+            if item.get("link"):
+                links.add(str(item.get("link")).lower().strip())
+            if item.get("source_url"):
+                links.add(str(item.get("source_url")).lower().strip())
+        return titles, links
     except Exception as e:
-        print(f"  ⚠ Could not fetch existing titles from Supabase: {e}")
-        return set()
+        print(f"  ⚠ Could not fetch existing opportunities from Supabase: {e}")
+        return set(), set()
 
 
 def push_to_supabase(opportunities: list) -> None:
@@ -493,11 +506,19 @@ def main():
     
     # Load existing pending items (to avoid duplicates)
     existing_pending = db.get_pending() if USE_SUPABASE else []
-    existing_titles = {item.get("title", "").lower() for item in existing_pending}
+    existing_titles = {item.get("title", "").lower().strip() for item in existing_pending if item.get("title")}
+    existing_links = set()
+    for item in existing_pending:
+        if item.get("link"):
+            existing_links.add(str(item.get("link")).lower().strip())
+        if item.get("source_url"):
+            existing_links.add(str(item.get("source_url")).lower().strip())
     
-    # Also fetch existing titles from Supabase to prevent double scraping
-    db_titles = db.get_existing_titles_from_supabase() if USE_SUPABASE else set()
-    existing_titles.update(db_titles)
+    # Also fetch existing titles and links from Supabase to prevent double scraping
+    if USE_SUPABASE:
+        db_titles, db_links = db.get_existing_opportunities_from_supabase()
+        existing_titles.update(db_titles)
+        existing_links.update(db_links)
     
     new_items = []
     
@@ -563,15 +584,24 @@ def main():
                 
                 found = extract_opportunities(page_text, scan_url, category_hint)
                 
-                # Deduplicate by title
+                # Deduplicate by title and links
                 source_new_count = 0
                 for item in found:
                     is_duplicate = False
                     item_title = item.get("title", "")
+                    item_link = str(item.get("link") or "").lower().strip()
+                    item_source = str(item.get("source_url") or "").lower().strip()
+                    
+                    # 1. Check title similarity
                     for existing in existing_titles:
                         if is_similar_title(item_title, existing):
                             is_duplicate = True
                             break
+                            
+                    # 2. Check link similarity
+                    if not is_duplicate:
+                        if (item_link and item_link in existing_links) or (item_source and item_source in existing_links):
+                            is_duplicate = True
                             
                     if not is_duplicate:
                         link = item.get("link")
@@ -588,7 +618,11 @@ def main():
                                         print(f"         ℹ No deadline found on detail page.")
                                         
                         new_items.append(item)
-                        existing_titles.add(item_title.lower())
+                        existing_titles.add(item_title.lower().strip())
+                        if item.get("link"):
+                            existing_links.add(str(item.get("link")).lower().strip())
+                        if item.get("source_url"):
+                            existing_links.add(str(item.get("source_url")).lower().strip())
                         source_new_count += 1
                         print(f"      ✅ Found: {item.get('title')} (Deadline: {item.get('deadline')})")
                     else:
