@@ -19,6 +19,13 @@
       "category_hint": "scholarships",
       "type": "category_page",
       "link_filter_keywords": ["scholarships-in-india", "scholarships", "fellowship", "scholarship", "admission"]
+    },
+    {
+      "url": "https://aglasem.com/exams",
+      "label": "AglaSem Entrance Exams",
+      "category_hint": "admissions",
+      "type": "category_page",
+      "link_filter_keywords": ["/exams/"]
     }
   ]
 }
