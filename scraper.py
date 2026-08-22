@@ -74,7 +74,8 @@ def is_similar_title(title_a: str, title_b: str) -> bool:
             return True
             
     # Substring matching (e.g. "Doctoral Research Grants" and "Al Qasimi Foundation Doctoral Research Grants")
-    if len(a) >= 12 and len(b) >= 12:
+    # To prevent generic matches on small common phrases, the shorter string must be at least 20 chars
+    if len(a) >= 20 and len(b) >= 20:
         if a in b or b in a:
             return True
             
@@ -155,7 +156,12 @@ def push_to_supabase(opportunities: list) -> None:
 EXTRACTION_PROMPT = """
 You are an assistant helping an Indian NGO called Ekayan Foundation find opportunities for underprivileged youth.
 
-Below is the text content of a webpage. Extract ALL upcoming opportunities (admissions, scholarships, fellowships, or job openings) that are still open or have future deadlines.
+Below is the text content of a webpage. Extract ALL upcoming opportunities (admissions, scholarships, fellowships, or job openings) that are still open or have future deadlines, AND are open/relevant to Indian students or candidates.
+
+CRITICAL RELEVANCE RULES:
+1. ONLY include opportunities that are open to Indian citizens/students or international opportunities open to applicants from India.
+2. If an opportunity is restricted to a specific country/region outside India (e.g., US only, Canada only, local Calgary residents, etc.), you MUST skip it.
+3. Only extract opportunities that are genuine admissions, scholarships, fellowships, or job openings.
 
 For each opportunity found, return a JSON array with objects using exactly this structure:
 {{
@@ -322,7 +328,7 @@ def fetch_page_html(url: str) -> str:
 
 def get_available_gemini_models() -> list:
     """Return standard verified Gemini generation models."""
-    return ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    return ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash-lite"]
 
 
 def extract_opportunities(page_text: str, source_url: str, category_hint: str) -> list:

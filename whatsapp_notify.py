@@ -151,6 +151,10 @@ def parse_command(text: str):
     if re.match(r'^list\b', text, re.IGNORECASE):
         return ("LIST", None)
         
+    # Match: REJECT EXPIRED (any case)
+    if re.match(r'^reject\s+expired\b', text, re.IGNORECASE):
+        return ("REJECT_EXPIRED", None)
+        
     # Match: APPROVE/REJECT (any case) followed by digits
     m = re.match(r'^(approve|reject)\s*(.*)', text, re.IGNORECASE)
     if m:
@@ -212,6 +216,25 @@ def send_chunked_list(to_number: str, items: list, footer: str):
 
 
 # ─── Admin Interaction Bot Logic ─────────────────────────────────────────────
+def is_deadline_expired(deadline_str: str) -> bool:
+    """Returns True if the deadline date is strictly in the past."""
+    if not deadline_str:
+        return False
+    d_str = str(deadline_str).strip()
+    if d_str.lower() in ["", "null", "none", "no deadline", "flexible"]:
+        return False
+    try:
+        # Extract YYYY-MM-DD
+        match = re.search(r'\d{4}-\d{2}-\d{2}', d_str)
+        if match:
+            deadline_date = datetime.strptime(match.group(0), "%Y-%m-%d").date()
+            return deadline_date < date.today()
+    except Exception as e:
+        print(f"[WA Notifier] Error parsing deadline '{deadline_str}': {e}")
+    return False
+
+
+# ─── Admin Interaction Bot Logic ─────────────────────────────────────────────
 def notify_admin_new_opportunities(new_items: list):
     """
     Called by scraper.py. Sends the admin a numbered list of new items to approve.
@@ -231,8 +254,25 @@ def notify_admin_new_opportunities(new_items: list):
     
     pending_review = state.get("pending_review", [])
     
-    # Add new items to the review queue
+    # Filter out expired items before adding to queue
+    valid_new_items = []
+    expired_count = 0
     for item in new_items:
+        if is_deadline_expired(item.get("deadline")):
+            print(f"[WA Notifier] Auto-rejecting expired scraped opportunity: {item.get('title')} ({item.get('deadline')})")
+            db.update_opportunity_status(item.get("id"), "rejected")
+            expired_count += 1
+        else:
+            valid_new_items.append(item)
+
+    if not valid_new_items:
+        print(f"[WA Notifier] All {len(new_items)} new opportunities were auto-rejected as expired.")
+        if expired_count > 0:
+            send_whatsapp_text(ADMIN_WAID, f"🧹 *Ekayan Scraper Run:* Auto-rejected {expired_count} newly scraped opportunities because their deadlines were in the past.")
+        return
+
+    # Add valid new items to the review queue
+    for item in valid_new_items:
         pending_review.append({
             "number": 0,
             "id": item.get("id"),
@@ -249,8 +289,12 @@ def notify_admin_new_opportunities(new_items: list):
     db.save_bot_state(state)
 
     # Format the WhatsApp message to Admin
-    msg = f"🔔 *Ekayan Scraper — {len(new_items)} New Opportunities Found!*\n\n"
-    for item in pending_review[-len(new_items):]:
+    msg = f"🔔 *Ekayan Scraper — {len(valid_new_items)} New Opportunities Found!*\n"
+    if expired_count > 0:
+        msg += f"🧹 _(Also auto-rejected {expired_count} expired opportunities)_\n"
+    msg += "\n"
+    
+    for item in pending_review[-len(valid_new_items):]:
         org = item.get("organization") or "Unknown"
         if len(org) > 40 or "unspecified" in org.lower() or "details on linked" in org.lower():
             org = "Unknown"
@@ -301,15 +345,17 @@ def handle_incoming_whatsapp_message(payload: dict):
         
         if command == "LIST":
             send_pending_list_to_admin()
+        elif command == "REJECT_EXPIRED":
+            reject_expired_items()
         elif command in ["APPROVE", "REJECT"] and nums:
             process_admin_decision(command, nums)
         else:
-            send_whatsapp_text(ADMIN_WAID, "❓ Unknown command.\nAvailable commands:\n• `LIST`\n• `APPROVE <numbers>` (e.g., `approve 1,2` or `approve 1 2`)\n• `REJECT <numbers>`")
+            send_whatsapp_text(ADMIN_WAID, "❓ Unknown command.\nAvailable commands:\n• `LIST`\n• `APPROVE <numbers>` (e.g., `approve 1,2` or `approve 1 2`)\n• `REJECT <numbers>`\n• `REJECT EXPIRED`")
             
     except Exception as e:
         print(f"[WA Bot] Exception inside webhook handler: {e}")
-
-
+ 
+ 
 def send_pending_list_to_admin():
     """Sends current list of pending numbered opportunities to the admin."""
     state = db.get_bot_state()
@@ -319,8 +365,49 @@ def send_pending_list_to_admin():
         send_whatsapp_text(ADMIN_WAID, "✅ No items currently pending review.")
         return
         
-    footer = "Reply:\n• `APPROVE <number>`\n• `REJECT <number>`"
+    footer = "Reply:\n• `APPROVE <number>`\n• `REJECT <number>`\n• `REJECT EXPIRED`"
     send_chunked_list(ADMIN_WAID, pending_review, footer)
+
+
+def reject_expired_items():
+    """Finds all expired items in the pending queue, rejects them in DB, and removes them from the queue."""
+    state = db.get_bot_state()
+    pending_review = state.get("pending_review", [])
+    
+    if not pending_review:
+        send_whatsapp_text(ADMIN_WAID, "✅ No items currently pending review.")
+        return
+        
+    expired_items = []
+    valid_items = []
+    
+    for item in pending_review:
+        if is_deadline_expired(item.get("deadline")):
+            expired_items.append(item)
+        else:
+            valid_items.append(item)
+            
+    if not expired_items:
+        send_whatsapp_text(ADMIN_WAID, "✅ No expired items found in the pending queue.")
+        return
+        
+    # Process rejection for each expired item in Supabase
+    for item in expired_items:
+        db.update_opportunity_status(item.get("id"), "rejected")
+        
+    # Re-index remaining from 1 onwards
+    for idx, item in enumerate(valid_items):
+        item["number"] = idx + 1
+        
+    state["pending_review"] = valid_items
+    db.save_bot_state(state)
+    
+    # Send summary message
+    msg = f"🗑️ *Rejected & Removed {len(expired_items)} Expired Items:*\n"
+    for item in expired_items:
+        msg += f"• {item.get('title')} ({item.get('deadline')})\n"
+    msg += "\n👉 Type `LIST` to see the updated queue (numbers are re-indexed from 1)."
+    send_whatsapp_text(ADMIN_WAID, msg)
 
 
 def process_admin_decision(action, item_numbers):
