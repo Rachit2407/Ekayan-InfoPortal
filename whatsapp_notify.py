@@ -485,6 +485,10 @@ def process_admin_decision(action, item_numbers):
             })
             save_json_file("opportunities.json", live)
             
+            # Rate limit guard: wait 1 second between batch approvals to prevent Telegram rate limit issues
+            import time
+            time.sleep(1.0)
+            
         success_titles.append(title)
 
     # Remove processed matches from local state queue and re-index the remaining items
