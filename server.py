@@ -69,7 +69,12 @@ def verify_webhook():
 
 import threading
 
+# Guard against concurrent webhook processing race condition
+seen_message_ids_lock = threading.Lock()
+in_memory_seen_ids = set()
+
 def safe_handle_message(body):
+    global in_memory_seen_ids
     try:
         # Check if it has a message
         entry = body.get("entry", [])
@@ -88,17 +93,26 @@ def safe_handle_message(body):
         if not message_id:
             return
             
-        # Check if already processed
+        # Deduplicate using an in-memory lock first
+        with seen_message_ids_lock:
+            if message_id in in_memory_seen_ids:
+                print(f"[Server] ⏭ Duplicate message ID {message_id} ignored (in-memory lock).")
+                return
+            in_memory_seen_ids.add(message_id)
+            if len(in_memory_seen_ids) > 1000:
+                in_memory_seen_ids = set(list(in_memory_seen_ids)[-500:])
+
+        # Check if already processed in database (persistent backup)
         state = db.get_bot_state()
         seen_ids = state.get("seen_message_ids", [])
         if not isinstance(seen_ids, list):
             seen_ids = []
             
         if message_id in seen_ids:
-            print(f"[Server] ⏭ Duplicate message ID {message_id} ignored.")
+            print(f"[Server] ⏭ Duplicate message ID {message_id} ignored (DB check).")
             return
             
-        # Mark this message ID as seen
+        # Mark this message ID as seen in database
         seen_ids = ([message_id] + seen_ids)[:100]
         state["seen_message_ids"] = seen_ids
         db.save_bot_state(state)
