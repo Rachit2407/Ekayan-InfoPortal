@@ -33,6 +33,7 @@
     <div class="tabs" style="margin: 1.5rem 0;">
       <button class="tab-btn active" id="tab-manage" onclick="switchAdminTab('manage')">📋 Manage Live Listings</button>
       <button class="tab-btn" id="tab-review" onclick="switchAdminTab('review')">🤖 AI Review Queue <span id="pending-badge" style="background:var(--primary-color);color:#fff;border-radius:10px;padding:2px 7px;font-size:0.75rem;margin-left:4px;">0</span></button>
+      <button class="tab-btn" id="tab-sources" onclick="switchAdminTab('sources')">🌐 Manage Scrape Sources</button>
     </div>
 
     <!-- MANAGE TAB -->
@@ -126,6 +127,93 @@
       </div>
     </div> <!-- end section-review -->
 
+    <!-- SOURCES TAB -->
+    <div id="section-sources" style="display:none;">
+      <div class="admin-container">
+        
+        <!-- Left Panel: Test & Add Source -->
+        <div class="admin-card">
+          <h2>Add Scrape Source</h2>
+          <p style="color:var(--text-secondary); margin-bottom:1.5rem; font-size:0.9rem;">
+            Paste a URL to auto-detect its compatibility and view a live preview of discoverable links.
+          </p>
+          
+          <div class="form-group">
+            <label for="src-url">Source URL / Sitemap XML</label>
+            <input type="url" id="src-url" class="form-control" placeholder="e.g. https://aglasem.com/exams or sitemap.xml" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="src-keywords">URL filter keywords (optional, comma-separated)</label>
+            <input type="text" id="src-keywords" class="form-control" placeholder="e.g. scholarship, admission, exam">
+            <small style="color:var(--text-muted); font-size:0.75rem; display:block; margin-top:4px;">
+              Only scrape sub-links containing these words. Default uses standard discovery list.
+            </small>
+          </div>
+          
+          <div style="margin-top:15px; margin-bottom:20px;">
+            <button type="button" id="btn-test-src" class="btn btn-secondary" style="width:100%;">🔍 Test URL Compatibility</button>
+          </div>
+          
+          <!-- Test results placeholder -->
+          <div id="test-results" style="display:none; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:12px; margin-bottom:20px;">
+          </div>
+          
+          <!-- Save Section (Initially Hidden) -->
+          <div id="save-source-config" style="display:none; border-top:1px solid rgba(255,255,255,0.1); padding-top:20px;">
+            <h3 style="margin-bottom:12px; font-size:1.1rem; border:none; padding:0;">Configure Scraper Settings</h3>
+            
+            <div class="form-group">
+              <label for="src-label">Source Display Name</label>
+              <input type="text" id="src-label" class="form-control" placeholder="e.g. AglaSem Entrance Exams" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="src-category">Category Hint</label>
+              <select id="src-category" class="form-control">
+                <option value="scholarships">Scholarships</option>
+                <option value="admissions">Admissions</option>
+                <option value="fellowships">Fellowships</option>
+                <option value="jobs">Job Leads</option>
+              </select>
+              <small style="color:var(--text-muted); font-size:0.75rem; display:block; margin-top:4px;">
+                AI will prioritize classification, but uses this as a default fallback.
+              </small>
+            </div>
+            
+            <div style="margin-top:20px;">
+              <button type="button" id="btn-save-src" class="btn btn-primary" style="width:100%;">💾 Save to Scraper</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Panel: Manage Existing Sources -->
+        <div class="admin-card">
+          <h2>Configured Scrape Sources</h2>
+          <p style="color:var(--text-secondary); margin-bottom:1rem; font-size:0.9rem;">
+            Currently scanned sites. Removing a site stops future scraping runs.
+          </p>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Source & URL</th>
+                  <th>Category Hint</th>
+                  <th>Type</th>
+                  <th>Keywords</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="sources-table-body">
+                <!-- Configured sources list injected here -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        
+      </div>
+    </div> <!-- end section-sources -->
+
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -133,5 +221,6 @@
   <script src="js/data.js"></script>
   <script src="js/admin.js"></script>
   <script src="js/review.js"></script>
+  <script src="js/sources.js"></script>
 </body>
 </html>

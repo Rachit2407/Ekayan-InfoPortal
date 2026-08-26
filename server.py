@@ -213,6 +213,138 @@ def approve_opportunity():
         "opportunity": item
     }), 200
 
+@app.route('/list-sources', methods=['GET'])
+def list_sources():
+    """List all configured scrape sources."""
+    try:
+        sources_file = "sources.json"
+        if os.path.exists(sources_file):
+            with open(sources_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            data = {"sources": []}
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/test-source', methods=['POST'])
+def test_source():
+    """Test a source URL to auto-detect its type and discover links."""
+    body = request.get_json(force=True, silent=True) or {}
+    url = body.get("url", "").strip()
+    filter_kws = body.get("filter_keywords", [])
+    
+    if not url:
+        return jsonify({"success": False, "error": "Missing URL"}), 400
+        
+    try:
+        from scraper import discover_sitemap_urls, discover_urls_from_category_page
+        
+        # Simple auto-detection
+        is_sitemap = url.endswith(".xml") or "sitemap" in url.lower()
+        
+        if is_sitemap:
+            detected_type = "sitemap"
+            urls = discover_sitemap_urls(url, max_urls=5)
+        else:
+            detected_type = "category_page"
+            # Split comma-separated keywords if sent as string, or use as list
+            if isinstance(filter_kws, str):
+                filter_kws = [k.strip() for k in filter_kws.split(",") if k.strip()]
+            urls = discover_urls_from_category_page(url, max_urls=5, filter_keywords=filter_kws)
+            
+        return jsonify({
+            "success": True,
+            "type": detected_type,
+            "discovered_urls": urls,
+            "count": len(urls)
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/save-source', methods=['POST'])
+def save_source():
+    """Save a new source to sources.json."""
+    body = request.get_json(force=True, silent=True) or {}
+    url = body.get("url", "").strip()
+    label = body.get("label", "").strip()
+    category_hint = body.get("category_hint", "scholarships").strip()
+    source_type = body.get("type", "").strip()
+    filter_kws = body.get("link_filter_keywords", [])
+    
+    if not url or not label:
+        return jsonify({"success": False, "error": "Missing URL or label"}), 400
+        
+    try:
+        sources_file = "sources.json"
+        if os.path.exists(sources_file):
+            with open(sources_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            data = {"sources": []}
+            
+        sources = data.get("sources", [])
+        
+        # Check if already exists
+        for src in sources:
+            if src.get("url", "").strip().lower() == url.lower():
+                return jsonify({"success": False, "error": "Source URL already exists"}), 400
+                
+        # Create new source
+        new_src = {
+            "url": url,
+            "label": label,
+            "category_hint": category_hint
+        }
+        if source_type:
+            new_src["type"] = source_type
+        if filter_kws:
+            if isinstance(filter_kws, str):
+                filter_kws = [k.strip() for k in filter_kws.split(",") if k.strip()]
+            new_src["link_filter_keywords"] = filter_kws
+            
+        sources.append(new_src)
+        data["sources"] = sources
+        
+        with open(sources_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/delete-source', methods=['POST'])
+def delete_source():
+    """Delete a source from sources.json."""
+    body = request.get_json(force=True, silent=True) or {}
+    url = body.get("url", "").strip()
+    
+    if not url:
+        return jsonify({"success": False, "error": "Missing URL"}), 400
+        
+    try:
+        sources_file = "sources.json"
+        if not os.path.exists(sources_file):
+            return jsonify({"success": False, "error": "sources.json not found"}), 404
+            
+        with open(sources_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        sources = data.get("sources", [])
+        new_sources = [s for s in sources if s.get("url", "").strip().lower() != url.lower()]
+        
+        if len(sources) == len(new_sources):
+            return jsonify({"success": False, "error": "Source URL not found"}), 404
+            
+        data["sources"] = new_sources
+        
+        with open(sources_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 if __name__ == "__main__":
     load_env()
     script_dir = os.path.dirname(os.path.abspath(__file__))
