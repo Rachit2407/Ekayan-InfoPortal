@@ -227,6 +227,37 @@ def list_sources():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/debug-fetch', methods=['GET'])
+def debug_fetch():
+    """Diagnose HTTP and Playwright issues on Render."""
+    url = request.args.get('url', 'https://aglasem.com/exams')
+    res = {}
+    try:
+        import requests
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}, timeout=10)
+        res["http_status"] = resp.status_code
+        res["http_len"] = len(resp.text)
+    except Exception as e:
+        res["http_error"] = str(e)
+        
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.launch(headless=True, args=['--disable-blink-features=AutomationControlled'])
+            except Exception as launch_err:
+                res["playwright_launch_error"] = str(launch_err)
+                browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            res["playwright_len"] = len(page.content())
+            browser.close()
+    except Exception as e:
+        res["playwright_error"] = str(e)
+        
+    return jsonify(res)
+
+
 @app.route('/test-source', methods=['POST'])
 def test_source():
     """Test a source URL to auto-detect its type and discover links."""
