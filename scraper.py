@@ -281,8 +281,14 @@ def fetch_page_content(url: str, return_html: bool = False) -> str:
     # Fallback 1: Cloudscraper (bypasses Cloudflare anti-bot 403 pages without browser memory overhead)
     try:
         import cloudscraper
-        print(f"   🛡️ Standard HTTP fetch blocked/empty. Falling back to Cloudscraper...")
-        scraper = cloudscraper.create_scraper()
+        print(f"   🛡️ Standard HTTP fetch blocked/empty ({url}). Falling back to Cloudscraper...")
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            }
+        )
         resp = scraper.get(url, timeout=15)
         if resp.status_code == 200 and len(resp.text) >= 300:
             html_content = resp.text
