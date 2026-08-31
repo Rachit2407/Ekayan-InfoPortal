@@ -229,17 +229,21 @@ def list_sources():
 
 @app.route('/debug-fetch', methods=['GET'])
 def debug_fetch():
-    """Diagnose HTTP and Playwright issues on Render."""
+    """Diagnose Cloudscraper and URL discovery on Render."""
     url = request.args.get('url', 'https://aglasem.com/exams')
     res = {}
+    
+    # 1. Test cloudscraper directly
     try:
-        import requests
-        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}, timeout=10)
-        res["http_status"] = resp.status_code
-        res["http_len"] = len(resp.text)
+        import cloudscraper
+        scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
+        resp = scraper.get(url, timeout=15)
+        res["cs_status"] = resp.status_code
+        res["cs_len"] = len(resp.text)
     except Exception as e:
-        res["http_error"] = str(e)
+        res["cs_error"] = str(e)
         
+    # 2. Test discover_urls_from_category_page
     try:
         from scraper import discover_urls_from_category_page
         urls = discover_urls_from_category_page(url, max_urls=5)
