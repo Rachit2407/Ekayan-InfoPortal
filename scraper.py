@@ -473,29 +473,42 @@ def discover_urls_from_category_page(category_url: str, max_urls: int = 5, filte
             
         soup = BeautifulSoup(html, "html.parser")
         links = []
-        from urllib.parse import urljoin
+        from urllib.parse import urljoin, urlparse
         
+        parsed_cat = urlparse(category_url)
+        cat_path = parsed_cat.path.rstrip('/')
+        
+        junk_terms = ["login", "signup", "auth.", "facebook", "twitter", "instagram", "youtube", "linkedin", "privacy", "terms", "about", "contact", "search"]
+        default_keywords = ["exam", "admission", "scholarship", "fellowship", "result", "form", "date", "apply", "test", "course", "article", "job", "recruitment", "grant"]
+        
+        active_keywords = filter_keywords if filter_keywords else default_keywords
+
         for a in soup.find_all("a", href=True):
             href = a["href"].strip()
             if not href or href.startswith("#") or "javascript:" in href.lower():
                 continue
                 
             full_url = urljoin(category_url, href)
+            parsed_full = urlparse(full_url)
             
-            # Skip the category page itself
-            if full_url.rstrip("/") == category_url.rstrip("/"):
+            # Skip the category page itself or root homepage
+            if full_url.rstrip("/") == category_url.rstrip("/") or parsed_full.path in ("", "/"):
                 continue
                 
-            # Filter links by keywords in the URL or the anchor text
-            if filter_keywords:
-                if not any(kw in full_url.lower() or kw in a.get_text().lower() for kw in filter_keywords):
-                    continue
-                    
-            if full_url not in links:
-                links.append(full_url)
-                if len(links) >= max_urls:
-                    break
-                    
+            # Skip junk/nav links
+            if any(junk in full_url.lower() for junk in junk_terms):
+                continue
+                
+            # Check if link path is a subpath of category page OR matches keywords
+            is_subpath = bool(cat_path and len(cat_path) > 1 and parsed_full.path.startswith(cat_path + "/"))
+            has_kw = any(kw.lower() in full_url.lower() or kw.lower() in a.get_text().lower() for kw in active_keywords)
+            
+            if is_subpath or has_kw:
+                if full_url not in links:
+                    links.append(full_url)
+                    if len(links) >= max_urls:
+                        break
+                        
         print(f"   ✅ Discovered {len(links)} articles from category page to scan.")
         return links
     except Exception as e:
