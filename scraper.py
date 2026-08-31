@@ -273,47 +273,22 @@ def fetch_page_content(url: str, return_html: bool = False) -> str:
         print(f"  ℹ HTTP fetch note ({url}): {e}")
 
     # If HTTP text is sufficient (>= 300 chars), return it/HTML directly
-    if return_html and html_content:
+    if return_html and html_content and len(html_content) >= 500:
         return html_content
     elif not return_html and len(text_content) >= 300:
         return text_content[:15000]
 
-    # If Playwright is explicitly disabled or we got any HTML content, avoid OOM on cloud servers
-    if os.environ.get("DISABLE_PLAYWRIGHT") == "true" or (html_content and len(html_content) > 500):
-        return html_content if return_html else (text_content[:15000] if text_content else "")
-
-    # Fallback to Playwright Headless Browser with stealth settings
+    # Fallback 1: Cloudscraper (bypasses Cloudflare anti-bot 403 pages without browser memory overhead)
     try:
-        from playwright.sync_api import sync_playwright
-        print(f"   🎭 Low/empty static content. Running Playwright headless browser for JS rendering...")
-        with sync_playwright() as p:
-            try:
-                browser = p.chromium.launch(
-                    headless=True,
-                    channel="chrome",
-                    args=['--disable-blink-features=AutomationControlled']
-                )
-            except Exception:
-                browser = p.chromium.launch(
-                    headless=True,
-                    args=['--disable-blink-features=AutomationControlled']
-                )
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 720},
-                locale="en-US"
-            )
-            page = context.new_page()
-            page.add_init_script("delete navigator.__proto__.webdriver;")
-            page.goto(url, wait_until="domcontentloaded", timeout=25000)
-            page.wait_for_timeout(2000)
-            pw_html = page.content()
-            browser.close()
-            
+        import cloudscraper
+        print(f"   🛡️ Standard HTTP fetch blocked/empty. Falling back to Cloudscraper...")
+        scraper = cloudscraper.create_scraper()
+        resp = scraper.get(url, timeout=15)
+        if resp.status_code == 200 and len(resp.text) >= 300:
+            html_content = resp.text
             if return_html:
-                return pw_html
-                
-            soup = BeautifulSoup(pw_html, "html.parser")
+                return html_content
+            soup = BeautifulSoup(html_content, "html.parser")
             for tag in soup(["script", "style", "nav", "footer", "header"]):
                 tag.decompose()
             from urllib.parse import urljoin
@@ -321,12 +296,11 @@ def fetch_page_content(url: str, return_html: bool = False) -> str:
                 href = a["href"].strip()
                 if href and not href.startswith("#") and "javascript:" not in href.lower():
                     a.replace_with(f"{a.get_text()} (Link: {urljoin(url, href)})")
-            pw_text = soup.get_text(separator="\n", strip=True)
-            if len(pw_text) > len(text_content):
-                print(f"   ✅ Playwright retrieved {len(pw_text)} characters.")
-                return pw_text[:15000]
-    except Exception as pw_err:
-        print(f"  ⚠ Playwright browser fallback skipped/failed: {pw_err}")
+            cs_text = soup.get_text(separator="\n", strip=True)
+            if len(cs_text) >= 300:
+                return cs_text[:15000]
+    except Exception as cs_err:
+        print(f"  ⚠ Cloudscraper fallback note: {cs_err}")
 
     return html_content if return_html else (text_content[:15000] if text_content else "")
 
