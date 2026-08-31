@@ -241,19 +241,12 @@ def debug_fetch():
         res["http_error"] = str(e)
         
     try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            try:
-                browser = p.chromium.launch(headless=True, args=['--disable-blink-features=AutomationControlled'])
-            except Exception as launch_err:
-                res["playwright_launch_error"] = str(launch_err)
-                browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=15000)
-            res["playwright_len"] = len(page.content())
-            browser.close()
+        from scraper import discover_urls_from_category_page
+        urls = discover_urls_from_category_page(url, max_urls=5)
+        res["discovered_urls"] = urls
+        res["count"] = len(urls)
     except Exception as e:
-        res["playwright_error"] = str(e)
+        res["discovery_error"] = str(e)
         
     return jsonify(res)
 
