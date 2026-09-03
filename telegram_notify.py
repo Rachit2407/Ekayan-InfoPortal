@@ -87,10 +87,11 @@ def format_opportunity_card(opp: dict) -> str:
         card += f"📝 <b>Details:</b>\n<i>{desc}</i>\n\n"
 
     if link:
-        card += f"🔗 <a href='{link}'><b>Apply / More Info</b></a>\n"
+        card += f"🔗 <a href='{link}'><b>Apply / More Info</b></a>\n\n"
 
     card += (
         f"──────────────────\n"
+        f"⚠️ <i>Shared for information only. Please verify the eligibility, deadline, fees and other details on the official provider website before applying. Ekayan does not guarantee the accuracy or outcome of this opportunity.</i>\n\n"
         f"📢 <b>Ekayan Info Portal</b>"
     )
     return card
