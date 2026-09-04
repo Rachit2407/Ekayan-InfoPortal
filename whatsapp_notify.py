@@ -138,7 +138,8 @@ def send_opportunity_notification(opportunity: dict) -> bool:
         f"📝 {description}...\n\n"
         f"🔗 *Apply / More Info:*\n{link}\n\n"
         f"──────────────────\n"
-        f"⚠️ _Shared for information only. Please verify the eligibility, deadline, fees and other details on the official provider website before applying. Ekayan does not guarantee the accuracy or outcome of this opportunity._\n\n"
+        f"🔴 *DISCLAIMER:*\n"
+        f"_Shared for information only. Please verify the eligibility, deadline, fees and other details on the official provider website before applying. Ekayan does not guarantee the accuracy or outcome of this opportunity._\n\n"
         f"_Powered by Ekayan Info Portal_"
     )
 
