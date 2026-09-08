@@ -47,6 +47,11 @@ def serve_portal():
     """Serve the main portal page."""
     return send_from_directory('.', 'portal.html')
 
+@app.route('/version')
+def version():
+    """Return current build version for debugging."""
+    return jsonify({"build": "c40dca9", "cloudscraper": "enabled", "status": "v2"})
+
 @app.route('/admin')
 def serve_admin():
     """Serve the admin control panel."""
