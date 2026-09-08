@@ -1,4 +1,5 @@
 import os
+# RENDER BUILD: 2026-09-08 v2 - cloudscraper enabled
 import sys
 import json
 import subprocess
